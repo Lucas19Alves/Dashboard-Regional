@@ -54,11 +54,21 @@ export function normalizeStoreCode(value) {
   return match ? match[0] : ''
 }
 
+export function isCancelledStore(row) {
+  if (!row) return false
+  const values = [row.isCancelled, row.cancelled, row.status, row.auditStatus]
+  return values.some((value) => {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'string') return ['cancelada', 'cancelado', 'cancelled', 'canceled', 'inativa', 'inativo'].includes(value.trim().toLowerCase())
+    return false
+  })
+}
+
 export function filterAllowedStoreRows(rows = []) {
   const list = Array.isArray(rows) ? rows : []
   return list.filter((row) => {
     const code = normalizeStoreCode(row?.code ?? row?.storeCode ?? row?.loja ?? '')
-    return STORE_CODES.includes(code)
+    return STORE_CODES.includes(code) && !isCancelledStore(row)
   })
 }
 

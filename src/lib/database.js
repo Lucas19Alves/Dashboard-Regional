@@ -1,6 +1,28 @@
 const DB_NAME = 'regional-audit-store'
 const STORE_NAME = 'audit-sessions'
 
+function sanitizeSerializableValue(value) {
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) return value.map((item) => sanitizeSerializableValue(item))
+
+  if (value && typeof value === 'object') {
+    if (value instanceof File || value instanceof Blob) return null
+    if (value instanceof Map || value instanceof Set) return Array.from(value.entries?.() ?? value.values?.() ?? [])
+
+    const safeObject = {}
+    for (const [key, item] of Object.entries(value)) {
+      if (key === '__v_isRef' || key === '__v_isReactive' || key === '__v_isShallow' || key === '_isMock') continue
+      const sanitized = sanitizeSerializableValue(item)
+      if (sanitized !== undefined) {
+        safeObject[key] = sanitized
+      }
+    }
+    return safeObject
+  }
+
+  return value
+}
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1)
@@ -38,8 +60,9 @@ export async function listSessions() {
 }
 
 export async function upsertSession(session) {
-  await runStoreRequest(STORE_NAME, 'readwrite', (store) => store.put(session))
-  return session
+  const safeSession = sanitizeSerializableValue(session)
+  await runStoreRequest(STORE_NAME, 'readwrite', (store) => store.put(safeSession))
+  return safeSession
 }
 
 export async function deleteSession(sessionId) {

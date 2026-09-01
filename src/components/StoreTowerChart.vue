@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { STORE_CODES, formatStoreLabel } from '../lib/metrics'
+import { STORE_CODES, formatStoreLabel, isCancelledStore } from '../lib/metrics'
 
 const props = defineProps({
   stores: {
@@ -28,7 +28,7 @@ const activeCodes = computed({
 })
 
 const filteredStores = computed(() => {
-  const list = (props.stores || []).filter((store) => STORE_CODES.includes(store.code))
+  const list = (props.stores || []).filter((store) => STORE_CODES.includes(store.code) && !isCancelledStore(store))
   if (!activeCodes.value.length) return []
   return [...list].filter((store) => activeCodes.value.includes(store.code))
 })
