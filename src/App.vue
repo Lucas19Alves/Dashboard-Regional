@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
-const isSidebarCollapsed = ref(false)
 const isInfoModalOpen = ref(false)
 
 const menuItems = [
@@ -27,44 +26,23 @@ function closeInfo() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'app-shell-collapsed': isSidebarCollapsed }">
-    <aside class="sidebar" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
-      <div class="brand-wrap">
-        <button class="collapse-toggle" @click="isSidebarCollapsed = !isSidebarCollapsed"
-          aria-label="Alternar menu lateral">
-          <i class="fa-solid fa-bars"></i>
-        </button>
-
-        <div v-if="!isSidebarCollapsed" class="brand-copy">
-          <p class="brand-overline">Auditorias</p>
-          <h2 class="brand-title">Regional SP6</h2>
-        </div>
-
-        <div v-else class="brand-badge">SP6</div>
-      </div>
-
-      <nav class="nav-list" :class="{ 'nav-list-collapsed': isSidebarCollapsed }">
-        <template v-for="item in menuItems" :key="item.name">
-          <RouterLink :to="item.to" class="nav-item" :class="{ 'nav-item-collapsed': isSidebarCollapsed }"
-            active-class="nav-item-active" :title="item.name">
-            <i :class="item.icon" aria-hidden="true"></i>
-            <span class="nav-item-text">&nbsp;&nbsp;&nbsp; {{ item.name }}</span>
-          </RouterLink>
-        </template>
-      </nav>
-
-      <div class="sidebar-footer">
-        <button type="button" class="nav-item nav-item-action" :class="{ 'nav-item-collapsed': isSidebarCollapsed }"
-          title="Info" @click="openInfo()">
-          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-          <span class="nav-item-text">&nbsp;&nbsp;&nbsp;Info</span>
-        </button>
-      </div>
-    </aside>
-
+  <div class="app-shell">
     <main class="content-panel">
       <RouterView />
     </main>
+
+    <nav class="bottom-navbar" aria-label="Navegação principal">
+      <template v-for="item in menuItems" :key="item.name">
+        <RouterLink :to="item.to" class="nav-pill" active-class="nav-pill-active" :title="item.name">
+          <i :class="item.icon" aria-hidden="true"></i>
+          <span>{{ item.name }}</span>
+        </RouterLink>
+      </template>
+    </nav>
+
+    <button type="button" class="info-fab" aria-label="Informações do projeto" title="Informações" @click="openInfo()">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    </button>
   </div>
 
   <div v-if="isInfoModalOpen" class="modal-backdrop" @click.self="closeInfo()">
