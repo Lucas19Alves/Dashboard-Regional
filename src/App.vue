@@ -12,9 +12,9 @@ const menuItems = [
 ]
 
 const projectLinks = [
-  { label: 'GitHub', icon: 'fab fa-github', href: 'https://github.com/lucasalves' },
-  { label: 'LinkedIn', icon: 'fab fa-linkedin-in', href: 'https://www.linkedin.com/in/lucas-alves-dev/' },
-  { label: 'Portfólio', icon: 'fas fa-globe', href: 'https://portfolio.lucasalves.dev' },
+  { label: 'GitHub', icon: 'fab fa-github', href: 'https://github.com/Lucas19Alves' },
+  { label: 'LinkedIn', icon: 'fab fa-linkedin-in', href: 'https://www.linkedin.com/in/lucaas19alves/' },
+  { label: 'Portfólio', icon: 'fas fa-globe', href: 'https://portfolio-lucasalves.vercel.app/' },
 ]
 
 function openInfo() {
