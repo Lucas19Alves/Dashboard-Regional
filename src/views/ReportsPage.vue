@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { listSessions } from '../lib/database'
 import { STORE_CODES, summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
+import { exportCardAsPng } from '../lib/exportImage'
 
 const sessions = ref([])
 const startDate = ref('')
@@ -258,6 +259,19 @@ function clearComparisonHover() {
   hoveredComparisonCode.value = null
 }
 
+const trendChartCard = ref(null)
+const pendingChartCard = ref(null)
+
+async function exportTrendChart() {
+  if (!trendChartCard.value) return
+  await exportCardAsPng(trendChartCard.value, 'leitura-ao-longo-do-periodo', { scale: 2.5, bottomPadding: 24 })
+}
+
+async function exportPendingChart() {
+  if (!pendingChartCard.value) return
+  await exportCardAsPng(pendingChartCard.value, 'pendencia-por-loja', { scale: 2.5, bottomPadding: 24 })
+}
+
 const insights = computed(() => {
   if (!regionalTrendSeries.value.length) {
     return [{ title: 'Sem dados', tone: 'neutral', body: 'Ainda não há evidências suficientes para análise no período selecionado.' }]
@@ -498,14 +512,25 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div ref="trendChartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Evolução</p>
           <h2 class="mt-2 text-xl font-semibold text-slate-900">Leitura ao longo do período</h2>
         </div>
-        <div class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-          Meta de pendência: {{ metaThreshold }}%
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            data-export-control
+            class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+            @click="exportTrendChart"
+          >
+            <i class="fa-solid fa-download"></i>
+            Salvar imagem
+          </button>
+          <div class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+            Meta de pendência: {{ metaThreshold }}%
+          </div>
         </div>
       </div>
 
@@ -586,13 +611,22 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div ref="pendingChartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Comparativo</p>
           <h2 class="mt-2 text-xl font-semibold text-slate-900">Pendência por loja</h2>
         </div>
         <div class="flex items-center gap-3">
+          <button
+            type="button"
+            data-export-control
+            class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+            @click="exportPendingChart"
+          >
+            <i class="fa-solid fa-download"></i>
+            Salvar imagem
+          </button>
           <label class="text-sm font-medium text-slate-700">Ordenar</label>
           <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
             <option value="pending">Pendência</option>
