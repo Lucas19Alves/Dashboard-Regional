@@ -100,15 +100,6 @@ Os arquivos compilados serão gerados na pasta `dist/`.
 - O sistema foi pensado para receber planilhas de consolidados do tipo regional, com colunas relacionadas a itens em estoque, não lidas, atualizadas e desatualizadas.
 - O fluxo de importação valida a estrutura do arquivo e identifica apenas lojas permitidas para a Regional SP6.
 
-## Contribuição
-
-Se quiser evoluir o projeto, você pode:
-
-1. criar uma branch para sua alteração;
-2. implementar a melhoria;
-3. validar com build local;
-4. abrir um pull request com descrição clara.
-
 ## Licença
 
 Este projeto é de uso interno e pessoal, sem uma licença pública definida.
