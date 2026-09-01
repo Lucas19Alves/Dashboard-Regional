@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { STORE_CODES, formatStoreLabel, isCancelledStore } from '../lib/metrics'
+import { exportCardAsPng } from '../lib/exportImage'
 
 const props = defineProps({
   stores: {
@@ -113,10 +114,17 @@ function setHover(code) {
 function clearHover() {
   hoveredCode.value = null
 }
+
+const chartCard = ref(null)
+
+async function exportChart() {
+  if (!chartCard.value) return
+  await exportCardAsPng(chartCard.value, 'pendencia-por-loja-e-regional', { scale: 2.5 })
+}
 </script>
 
 <template>
-  <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div ref="chartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
     <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Indicador principal</p>
@@ -124,6 +132,15 @@ function clearHover() {
       </div>
 
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <button
+          type="button"
+          data-export-control
+          class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+          @click="exportChart"
+        >
+          <i class="fa-solid fa-download"></i>
+          Salvar imagem
+        </button>
         <label class="text-sm font-medium text-slate-700">Ordenar</label>
         <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
           <option value="pending">Pendência</option>

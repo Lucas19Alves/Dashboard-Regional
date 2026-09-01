@@ -460,7 +460,7 @@ onMounted(async () => {
         >
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
-            <h3 class="mt-2 text-xl font-semibold text-slate-900">Cancelar loja na auditoria</h3>
+            <h3 class="mt-2 text-xl font-semibold text-slate-900">Cancelar auditoria de lojas</h3>
           </div>
 
           <div class="flex items-center gap-3">
