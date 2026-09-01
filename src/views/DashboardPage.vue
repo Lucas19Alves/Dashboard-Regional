@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import MetricCard from '../components/MetricCard.vue'
 import StoreBarChart from '../components/StoreBarChart.vue'
 import InsightPanel from '../components/InsightPanel.vue'
-import { STORE_CODES, summarizeStores, buildForecast, getStoreStatusLabel } from '../lib/metrics'
+import { STORE_CODES, summarizeStores, buildForecast, getStoreStatusLabel, isCancelledStore } from '../lib/metrics'
 import { listSessions } from '../lib/database'
 
 const sessions = ref([])
@@ -17,7 +17,7 @@ const activeSession = computed(() => {
 
 const filteredStores = computed(() => {
   const raw = (activeSession.value?.stores || [])
-    .filter((store) => selectedCodes.value.includes(store.code))
+    .filter((store) => !isCancelledStore(store) && selectedCodes.value.includes(store.code))
     .map((store) => ({
       ...store,
       readPct: Number(store.readPct || 0),

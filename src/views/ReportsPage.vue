@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { listSessions } from '../lib/database'
-import { STORE_CODES, summarizeStores, formatStoreLabel } from '../lib/metrics'
+import { STORE_CODES, summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
 
 const sessions = ref([])
 const startDate = ref('')
@@ -49,6 +49,7 @@ const filteredStoreRows = computed(() => {
 
   for (const session of filteredSessions.value) {
     for (const store of session.stores || []) {
+      if (isCancelledStore(store)) continue
       if (!selectedStores.value.includes(store.code)) continue
       const target = totals[store.code]
       if (!target) continue
@@ -127,7 +128,7 @@ const trendDates = computed(() => {
 
 const regionalTrendSeries = computed(() => {
   return filteredSessions.value.map((session) => {
-    const selected = (session.stores || []).filter((store) => selectedStores.value.includes(store.code))
+    const selected = (session.stores || []).filter((store) => selectedStores.value.includes(store.code) && !isCancelledStore(store))
     const summary = summarizeStores(selected)
     return {
       isoDate: session.isoDate,
@@ -144,14 +145,16 @@ const regionalTrendSeries = computed(() => {
 const storeTrendSeries = computed(() => {
   const codes = selectedStores.value.length ? selectedStores.value : STORE_CODES
   return codes.map((code, index) => {
-    const matchStore = (filteredSessions.value || []).flatMap((session) => session.stores || []).find((store) => store.code === code)
+    const matchStore = (filteredSessions.value || [])
+      .flatMap((session) => session.stores || [])
+      .find((store) => store.code === code && !isCancelledStore(store))
 
     return {
       code,
       name: matchStore?.name || '',
       color: chartPalette[index % chartPalette.length],
       points: filteredSessions.value.map((session) => {
-        const match = (session.stores || []).find((store) => store.code === code)
+        const match = (session.stores || []).find((store) => store.code === code && !isCancelledStore(store))
         const summary = match ? summarizeStores([match]) : { readPct: 0, pendingPct: 0, accuracyPct: 0, totalSku: 0, pendingItems: 0 }
         return {
           isoDate: session.isoDate,

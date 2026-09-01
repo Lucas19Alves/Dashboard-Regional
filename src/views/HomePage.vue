@@ -4,7 +4,7 @@ import UploadModal from '../components/UploadModal.vue'
 import WeekCalendar from '../components/WeekCalendar.vue'
 import MetricCard from '../components/MetricCard.vue'
 import StoreBarChart from '../components/StoreBarChart.vue'
-import { getCurrentWeekDays, REGIONAL_NAME, summarizeStores, normalizeStoreMetrics, buildForecast, STORE_CODES, filterAllowedStoreRows, parseNumeric } from '../lib/metrics'
+import { getCurrentWeekDays, REGIONAL_NAME, summarizeStores, normalizeStoreMetrics, buildForecast, STORE_CODES, filterAllowedStoreRows, parseNumeric, isCancelledStore } from '../lib/metrics'
 import { deleteSession, listSessions, upsertSession } from '../lib/database'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
 import * as XLSX from 'xlsx'
@@ -13,6 +13,7 @@ const sessions = ref([])
 const weekCursor = ref(new Date())
 const currentWeek = computed(() => getCurrentWeekDays(weekCursor.value))
 const isModalOpen = ref(false)
+const isStoreCancellationModalOpen = ref(false)
 const selectedDay = ref(null)
 const selectedChartCodes = ref([...STORE_CODES])
 
@@ -48,6 +49,19 @@ const selectedChartStores = computed(() => {
 })
 
 const selectedChartSummary = computed(() => summarizeStores(selectedChartStores.value))
+
+const storeStatusRows = computed(() => {
+  const rows = (activeSession.value?.stores || [])
+    .filter((store) => STORE_CODES.includes(store.code))
+    .sort((a, b) => a.code.localeCompare(b.code))
+
+  return rows.map((store) => ({
+    ...store,
+    isCancelled: isCancelledStore(store),
+  }))
+})
+
+const cancelledStoreCount = computed(() => storeStatusRows.value.filter((store) => store.isCancelled).length)
 
 const normalizeHeader = (value) => String(value ?? '')
   .normalize('NFD')
@@ -224,6 +238,32 @@ function openDay(day) {
 function openUpdateForSelectedDay() {
   if (!selectedDay.value) return
   isModalOpen.value = true
+}
+
+async function toggleStoreCancellation(code, nextValue) {
+  const session = activeSession.value
+  if (!session) return
+
+  const updatedStores = (session.stores || []).map((store) => {
+    if (store.code !== code) return store
+    const cancelled = Boolean(nextValue)
+    return {
+      ...store,
+      cancelled,
+      isCancelled: cancelled,
+      status: cancelled ? 'cancelada' : 'ativa',
+    }
+  })
+
+  const updatedSession = {
+    ...session,
+    stores: updatedStores,
+    summary: summarizeStores(updatedStores),
+    forecast: buildForecast(summarizeStores(updatedStores)),
+  }
+
+  sessions.value = sessions.value.map((item) => (item.id === updatedSession.id ? updatedSession : item))
+  await upsertSession(updatedSession)
 }
 
 async function deleteSelectedAudit() {
@@ -412,6 +452,28 @@ onMounted(async () => {
         </div>
       </div>
 
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-100"
+          @click="isStoreCancellationModalOpen = true"
+        >
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
+            <h3 class="mt-2 text-xl font-semibold text-slate-900">Cancelar loja na auditoria</h3>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <span class="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              {{ cancelledStoreCount }} fora do resultado
+            </span>
+            <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm ring-1 ring-slate-200">
+              <i class="fa-solid fa-pen-to-square text-sm"></i>
+            </span>
+          </div>
+        </button>
+      </div>
+
       <StoreTowerChart
         :stores="selectedChartStores"
         :regional-summary="selectedChartSummary"
@@ -426,6 +488,53 @@ onMounted(async () => {
 
     <div v-if="isModalOpen && selectedDay" class="relative">
       <UploadModal @close="isModalOpen = false" @upload="handleUpload" />
+    </div>
+
+    <div v-if="isStoreCancellationModalOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+      <div class="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
+            <h3 class="mt-2 text-2xl font-semibold text-slate-900">Cancelar loja na auditoria</h3>
+          </div>
+          <button type="button" class="text-lg text-slate-500 hover:text-slate-900" @click="isStoreCancellationModalOpen = false">×</button>
+        </div>
+
+        <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 max-h-[60vh] overflow-y-auto pr-1">
+          <div
+            v-for="store in storeStatusRows"
+            :key="store.code"
+            class="flex min-h-[112px] flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+            :class="store.isCancelled ? 'border-rose-200 bg-rose-50' : ''"
+          >
+            <div>
+              <p class="font-semibold text-slate-900">Loja {{ store.code }}</p>
+              <p class="mt-1 text-xs text-slate-500">
+                {{ store.isCancelled ? 'Cancelada e fora do resultado' : 'Contabilizada no resultado' }}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="w-full rounded-xl px-3 py-2 text-sm font-medium transition"
+              :class="store.isCancelled ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'"
+              @click="toggleStoreCancellation(store.code, !store.isCancelled); isStoreCancellationModalOpen = false"
+            >
+              {{ store.isCancelled ? 'Reativar' : 'Cancelar' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+            @click="isStoreCancellationModalOpen = false"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

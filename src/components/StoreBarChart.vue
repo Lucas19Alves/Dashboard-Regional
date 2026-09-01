@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { STORE_CODES } from '../lib/metrics'
+import { STORE_CODES, isCancelledStore } from '../lib/metrics'
 
 const props = defineProps({
   stores: {
@@ -14,7 +14,7 @@ const props = defineProps({
 })
 
 const chartStores = computed(() => {
-  const allowedStores = (props.stores || []).filter((store) => STORE_CODES.includes(store.code))
+  const allowedStores = (props.stores || []).filter((store) => STORE_CODES.includes(store.code) && !isCancelledStore(store))
   const active = (props.selectedCodes || []).filter((code) => STORE_CODES.includes(code))
   const selectedSet = active.length ? active : allowedStores.map((store) => store.code)
 
