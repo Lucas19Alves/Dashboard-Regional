@@ -2,6 +2,26 @@ export const REGIONAL_NAME = 'Regional SP6'
 export const STORE_CODES = ['008', '009', '015', '093', '096', '112', '127', '149', '151', '233', '270', '280', '282', '350']
 export const ALLOWED_STORE_CODES = [...STORE_CODES]
 
+export function parseNumeric(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback
+
+  const cleaned = String(value).trim()
+  if (!cleaned) return fallback
+
+  const normalized = cleaned
+    .replace(/\./g, '')
+    .replace(/,/g, '.')
+    .replace(/[^\d.-]/g, '')
+
+  const parsed = Number.parseFloat(normalized)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+export function toPercent(value, total) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0
+  return Number(((value / total) * 100).toFixed(2))
+}
+
 export function formatStoreLabel(code, storeName = '') {
   if (!code && !storeName) return REGIONAL_NAME
   if (String(code).toLowerCase() === 'regional') return REGIONAL_NAME
@@ -35,7 +55,8 @@ export function normalizeStoreCode(value) {
 }
 
 export function filterAllowedStoreRows(rows = []) {
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
+  const list = Array.isArray(rows) ? rows : []
+  return list.filter((row) => {
     const code = normalizeStoreCode(row?.code ?? row?.storeCode ?? row?.loja ?? '')
     return STORE_CODES.includes(code)
   })
@@ -48,13 +69,18 @@ export const DAY_CONFIG = [
   { key: 'thursday', label: 'Quinta', activity: 'Etiqueta' },
 ]
 
+function toIsoDate(date) {
+  const offsetInMinutes = date.getTimezoneOffset()
+  const localDate = new Date(date.getTime() - offsetInMinutes * 60 * 1000)
+  return localDate.toISOString().slice(0, 10)
+}
+
 export function getCurrentWeekDays(referenceDate = new Date()) {
   const date = new Date(referenceDate)
-  const currentDay = date.getDay()
-  const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay
+  const currentDay = date.getDay() || 7
   const monday = new Date(date)
-  monday.setDate(date.getDate() + diffToMonday)
   monday.setHours(0, 0, 0, 0)
+  monday.setDate(date.getDate() - (currentDay - 1))
 
   return DAY_CONFIG.map((day, index) => {
     const value = new Date(monday)
@@ -62,7 +88,7 @@ export function getCurrentWeekDays(referenceDate = new Date()) {
     return {
       ...day,
       date: value,
-      iso: value.toISOString().slice(0, 10),
+      iso: toIsoDate(value),
       short: `${value.getDate()}/${value.getMonth() + 1}`,
     }
   })
@@ -77,7 +103,6 @@ export function buildDemoStoreMetrics() {
   return STORE_CODES.map((code, index) => {
     const total = 340 + index * 52 + (index % 3) * 38
     const pendingRate = 0.018 + ((index + 2) % 5) * 0.006
-    const readRate = 0.82 + (index % 7) * 0.015
     const pending = Math.round(total * pendingRate)
     const readableTotal = total - pending
     const updatedShare = 0.7 + ((index % 4) * 0.04)
@@ -100,21 +125,14 @@ export function buildDemoStoreMetrics() {
 }
 
 export function normalizeStoreMetrics(row) {
-  const normalizeNumber = (value) => {
-    if (value === null || value === undefined || value === '') return 0
-    const cleaned = String(value).replace(/\./g, '').replace(',', '.')
-    const numeric = Number.parseFloat(cleaned)
-    return Number.isFinite(numeric) ? numeric : 0
-  }
-
-  const totalSku = Math.max(0, normalizeNumber(row.totalSku ?? row.C ?? row.total ?? row['SKU Total']))
-  const pendingItems = Math.max(0, normalizeNumber(row.pendingItems ?? row.D ?? row.pending ?? row['Não lidos']))
-  const updatedItems = Math.max(0, normalizeNumber(row.updatedItems ?? row.E ?? row.updated ?? row['Lidos atualizados']))
-  const outdatedItems = Math.max(0, normalizeNumber(row.outdatedItems ?? row.F ?? row.outdated ?? row['Lidos desatualizados']))
+  const totalSku = Math.max(0, parseNumeric(row.totalSku ?? row.C ?? row.total ?? row['SKU Total']))
+  const pendingItems = Math.max(0, parseNumeric(row.pendingItems ?? row.D ?? row.pending ?? row['Não lidos']))
+  const updatedItems = Math.max(0, parseNumeric(row.updatedItems ?? row.E ?? row.updated ?? row['Lidos atualizados']))
+  const outdatedItems = Math.max(0, parseNumeric(row.outdatedItems ?? row.F ?? row.outdated ?? row['Lidos desatualizados']))
 
   const readItems = updatedItems + outdatedItems
-  const readPct = totalSku > 0 ? Number(((readItems / totalSku) * 100).toFixed(2)) : 0
-  const pendingPct = totalSku > 0 ? Number(((pendingItems / totalSku) * 100).toFixed(2)) : 0
+  const readPct = toPercent(readItems, totalSku)
+  const pendingPct = toPercent(pendingItems, totalSku)
   const accuracyPct = readItems > 0 ? Number(((updatedItems / readItems) * 100).toFixed(2)) : 0
 
   return {
@@ -144,9 +162,9 @@ export function summarizeStores(storeRows) {
   )
 
   const readItems = totals.updatedItems + totals.outdatedItems
-  const readPct = totals.totalSku > 0 ? (readItems / totals.totalSku) * 100 : 0
-  const pendingPct = totals.totalSku > 0 ? (totals.pendingItems / totals.totalSku) * 100 : 0
-  const accuracyPct = readItems > 0 ? (totals.updatedItems / readItems) * 100 : 0
+  const readPct = toPercent(readItems, totals.totalSku)
+  const pendingPct = toPercent(totals.pendingItems, totals.totalSku)
+  const accuracyPct = readItems > 0 ? Number(((totals.updatedItems / readItems) * 100).toFixed(2)) : 0
 
   return {
     totalSku: totals.totalSku,

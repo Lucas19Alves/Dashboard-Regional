@@ -37,6 +37,12 @@ function getAuditTypeLabel(session) {
   return { label, date: formattedDate }
 }
 
+const sessionMetadata = computed(() => {
+  return Object.fromEntries(
+    (sessions.value || []).map((session) => [session.id, getAuditTypeLabel(session)]),
+  )
+})
+
 function changePage(nextPage) {
   currentPage.value = Math.min(Math.max(nextPage, 1), totalPages.value)
 }
@@ -119,10 +125,10 @@ onMounted(async () => {
         <div v-for="session in paginatedSessions" :key="session.id" class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <div class="min-w-0 flex-1">
             <p class="truncate text-base font-semibold text-slate-900">
-              {{ getAuditTypeLabel(session).label }}
+              {{ sessionMetadata[session.id]?.label || 'Auditoria' }}
             </p>
             <p class="mt-1 text-sm text-slate-600">
-              {{ getAuditTypeLabel(session).date || session.dayLabel || 'Data indisponível' }}
+              {{ sessionMetadata[session.id]?.date || session.dayLabel || 'Data indisponível' }}
             </p>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-1 text-right">

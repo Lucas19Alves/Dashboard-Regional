@@ -17,37 +17,34 @@ function openDatabase() {
   })
 }
 
-export async function listSessions() {
-  const db = await openDatabase()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly')
-    const request = transaction.objectStore(STORE_NAME).getAll()
+function runStoreRequest(storeName, mode, requestBuilder) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await openDatabase()
+      const transaction = db.transaction(storeName, mode)
+      const request = requestBuilder(transaction.objectStore(storeName))
 
-    request.onsuccess = () => resolve(request.result || [])
-    request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    } catch (error) {
+      reject(error)
+    }
   })
+}
+
+export async function listSessions() {
+  const result = await runStoreRequest(STORE_NAME, 'readonly', (store) => store.getAll())
+  return Array.isArray(result) ? result : []
 }
 
 export async function upsertSession(session) {
-  const db = await openDatabase()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite')
-    const request = transaction.objectStore(STORE_NAME).put(session)
-
-    request.onsuccess = () => resolve(session)
-    request.onerror = () => reject(request.error)
-  })
+  await runStoreRequest(STORE_NAME, 'readwrite', (store) => store.put(session))
+  return session
 }
 
 export async function deleteSession(sessionId) {
-  const db = await openDatabase()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite')
-    const request = transaction.objectStore(STORE_NAME).delete(sessionId)
-
-    request.onsuccess = () => resolve(true)
-    request.onerror = () => reject(request.error)
-  })
+  await runStoreRequest(STORE_NAME, 'readwrite', (store) => store.delete(sessionId))
+  return true
 }
 
 export async function exportSessionsAsJson() {

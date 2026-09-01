@@ -4,7 +4,7 @@ import UploadModal from '../components/UploadModal.vue'
 import WeekCalendar from '../components/WeekCalendar.vue'
 import MetricCard from '../components/MetricCard.vue'
 import StoreBarChart from '../components/StoreBarChart.vue'
-import { getCurrentWeekDays, REGIONAL_NAME, summarizeStores, normalizeStoreMetrics, buildForecast, STORE_CODES, filterAllowedStoreRows } from '../lib/metrics'
+import { getCurrentWeekDays, REGIONAL_NAME, summarizeStores, normalizeStoreMetrics, buildForecast, STORE_CODES, filterAllowedStoreRows, parseNumeric } from '../lib/metrics'
 import { deleteSession, listSessions, upsertSession } from '../lib/database'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
 import * as XLSX from 'xlsx'
@@ -57,11 +57,12 @@ const normalizeHeader = (value) => String(value ?? '')
   .trim()
   .toLowerCase()
 
-const readNumber = (value) => {
-  if (value === null || value === undefined || value === '') return 0
-  const cleaned = String(value).replace(/\./g, '').replace(/,/g, '.').trim()
-  const parsed = Number.parseFloat(cleaned)
-  return Number.isFinite(parsed) ? parsed : 0
+const findHeaderIndex = (headerRow, matchers) => {
+  for (const matcher of matchers) {
+    const index = headerRow.findIndex((name) => matcher(name))
+    if (index >= 0) return index
+  }
+  return -1
 }
 
 function getDayByIso(dateIso) {
@@ -105,53 +106,61 @@ function parseSpreadSheetRows(file) {
   if (!matrix.length) return []
 
   const headerRow = matrix[0].map((value) => normalizeHeader(value))
-  const indexOf = (names) => {
-    const match = names.findIndex((name) => names.includes(name))
-    return match >= 0 ? match : -1
-  }
-
   const columnMap = {
-    tree: headerRow.findIndex((name) => name.includes('arvore') || name.includes('tree')),
-    audit: headerRow.findIndex((name) => name.includes('auditado') || name.includes('audit')),
-    total: headerRow.findIndex((name) => name.includes('itens com estoque') || name.includes('itenscomestoque') || name.includes('itens') && name.includes('estoque')),
-    pending: headerRow.findIndex((name) => name.includes('nao lidas com estoque') || name.includes('naolidascomestoque') || name.includes('nao lidas')),
-    updated: headerRow.findIndex((name) => name.includes('atualizadas com estoque') || name.includes('atualizadascomestoque') || name.includes('atualizadas')),
-    outdated: headerRow.findIndex((name) => name.includes('desatualizadas') || name.includes('desatualizadas com estoque')),
+    tree: findHeaderIndex(headerRow, [(name) => name.includes('arvore') || name.includes('tree')]),
+    audit: findHeaderIndex(headerRow, [(name) => name.includes('auditado') || name.includes('audit')]),
+    total: findHeaderIndex(headerRow, [
+      (name) => name.includes('itenscomestoque') || (name.includes('itens') && name.includes('estoque')),
+      (name) => name.includes('itens com estoque'),
+    ]),
+    pending: findHeaderIndex(headerRow, [
+      (name) => name.includes('naolidascomestoque') || (name.includes('nao') && name.includes('lidas') && name.includes('estoque')),
+      (name) => name.includes('nao lidas com estoque') || name.includes('nao lidas'),
+    ]),
+    updated: findHeaderIndex(headerRow, [
+      (name) => name.includes('atualizadascomestoque') || (name.includes('atualizadas') && name.includes('estoque')),
+      (name) => name.includes('atualizadas com estoque') || name.includes('atualizadas'),
+    ]),
+    outdated: findHeaderIndex(headerRow, [
+      (name) => name.includes('desatualizadascomestoque') || name.includes('desatualizadas'),
+      (name) => name.includes('desatualizadas com estoque'),
+    ]),
   }
 
-  return matrix.slice(1).map((row) => {
-    if (!Array.isArray(row) || row.length < 5) return null
+  return matrix
+    .slice(1)
+    .map((row) => {
+      if (!Array.isArray(row) || row.length < 5) return null
 
-    const treeCell = row[columnMap.tree] ?? ''
-    const nameCell = row[columnMap.audit] ?? row[1] ?? ''
-    const totalSku = readNumber(row[columnMap.total] ?? row[2])
-    const pendingItems = readNumber(row[columnMap.pending] ?? row[3])
-    const updatedItems = readNumber(row[columnMap.updated] ?? row[4])
-    const outdatedItems = readNumber(row[columnMap.outdated] ?? row[5])
+      const treeCell = row[columnMap.tree] ?? ''
+      const nameCell = row[columnMap.audit] ?? row[1] ?? ''
+      const totalSku = parseNumeric(row[columnMap.total] ?? row[2])
+      const pendingItems = parseNumeric(row[columnMap.pending] ?? row[3])
+      const updatedItems = parseNumeric(row[columnMap.updated] ?? row[4])
+      const outdatedItems = parseNumeric(row[columnMap.outdated] ?? row[5])
 
-    const codeFromTree = String(treeCell).match(/\b\d{3}\b/)
-    const codeFromName = String(nameCell).match(/\b\d{3}\b/)
-      const rawCode = codeFromTree ? codeFromTree[0] : (codeFromName ? codeFromName[0] : '')
+      const codeFromTree = String(treeCell).match(/\b\d{3}\b/)
+      const codeFromName = String(nameCell).match(/\b\d{3}\b/)
+      const rawCode = codeFromTree ? codeFromTree[0] : codeFromName?.[0] ?? ''
       const code = /^\d{3}$/.test(rawCode) ? rawCode : ''
-
-      const label = String(nameCell)
+      const label = String(nameCell).trim()
       const isAggregate = /regional|regiao|macro|sub-regiao|macro regional|regiao de venda/i.test(label)
 
       if (!STORE_CODES.includes(code) || isAggregate) {
         return null
       }
 
-      const storeName = String(nameCell || '').trim()
-
       return {
         code,
-        name: storeName || undefined,
+        name: label || undefined,
         totalSku,
         pendingItems,
         updatedItems,
         outdatedItems,
       }
-    }).filter(Boolean).filter((row) => row.totalSku > 0 || row.pendingItems > 0 || row.updatedItems > 0 || row.outdatedItems > 0)
+    })
+    .filter(Boolean)
+    .filter((row) => row.totalSku > 0 || row.pendingItems > 0 || row.updatedItems > 0 || row.outdatedItems > 0)
 }
 
 async function handleUpload(file) {
