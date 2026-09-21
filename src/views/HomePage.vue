@@ -318,7 +318,7 @@ onMounted(async () => {
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Auditorias</p>
           <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">Regional SP6</h1>
           <p class="mt-2 text-sm text-slate-600">
-            Acompanhamento consolidado das lojas 008, 009, 015, 093, 096, 112, 127, 149, 151, 233, 270, 280, 282 e 350.
+            Acompanhamento consolidado das lojas 008, 015, 093, 096, 112, 127, 149, 151, 233, 270, 280, 282 e 337.
           </p>
         </div>
         <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

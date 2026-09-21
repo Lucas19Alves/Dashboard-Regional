@@ -21,6 +21,7 @@ const props = defineProps({
 const emit = defineEmits(['update:selectedCodes'])
 const sortMode = ref('pending')
 const metaThreshold = 3
+const chartScale = 100
 const hoveredCode = ref(null)
 
 const activeCodes = computed({
@@ -76,12 +77,7 @@ const chartRows = computed(() => {
   return sorted
 })
 
-const maxValue = computed(() => {
-  const values = chartRows.value.map((row) => Number(row.pendingPct || 0))
-  return Math.max(12, ...values)
-})
-
-const targetPercent = computed(() => (metaThreshold / maxValue.value) * 100)
+const targetPercent = computed(() => (metaThreshold / chartScale) * 100)
 
 function toggleCode(code) {
   const next = [...activeCodes.value]
@@ -104,7 +100,8 @@ function getBarClass(row) {
 }
 
 function getBarWidth(row) {
-  return Math.max(6, (Number(row.pendingPct || 0) / maxValue.value) * 100)
+  const pendingPct = Number(row.pendingPct || 0)
+  return Math.min(Math.max(pendingPct, 0), chartScale)
 }
 
 function setHover(code) {
