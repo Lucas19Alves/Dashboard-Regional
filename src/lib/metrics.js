@@ -1,5 +1,5 @@
 export const REGIONAL_NAME = 'Regional SP6'
-export const STORE_CODES = ['008', '009', '015', '093', '096', '112', '127', '149', '151', '233', '270', '280', '282', '350']
+export const STORE_CODES = ['008', '015', '093', '096', '112', '127', '149', '151', '233', '270', '280', '282', '337']
 export const ALLOWED_STORE_CODES = [...STORE_CODES]
 
 export function parseNumeric(value, fallback = 0) {
