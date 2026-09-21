@@ -16,21 +16,28 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  storeCodes: {
+    type: Array,
+    default: () => STORE_CODES,
+  },
+  regionalName: {
+    type: String,
+    default: 'Regional SP6',
+  },
 })
 
 const emit = defineEmits(['update:selectedCodes'])
 const sortMode = ref('pending')
 const metaThreshold = 3
-const chartScale = 100
 const hoveredCode = ref(null)
 
 const activeCodes = computed({
-  get: () => (props.selectedCodes?.length ? props.selectedCodes : STORE_CODES),
+  get: () => (props.selectedCodes?.length ? props.selectedCodes : props.storeCodes),
   set: (value) => emit('update:selectedCodes', value),
 })
 
 const filteredStores = computed(() => {
-  const list = (props.stores || []).filter((store) => STORE_CODES.includes(store.code) && !isCancelledStore(store))
+  const list = (props.stores || []).filter((store) => props.storeCodes.includes(store.code) && !isCancelledStore(store))
   if (!activeCodes.value.length) return []
   return [...list].filter((store) => activeCodes.value.includes(store.code))
 })
@@ -39,7 +46,7 @@ const chartRows = computed(() => {
   const rows = [...filteredStores.value].map((store) => ({
     ...store,
     code: String(store.code),
-    displayName: formatStoreLabel(store.code, store.name),
+    displayName: formatStoreLabel(store.code, store.name, props.regionalName),
     pendingPct: Number(store.pendingPct || 0),
     readPct: Number(store.readPct || 0),
     accuracyPct: Number(store.accuracyPct || 0),
@@ -49,7 +56,7 @@ const chartRows = computed(() => {
   if (props.regionalSummary) {
     rows.push({
       code: 'Regional',
-      displayName: formatStoreLabel('Regional'),
+      displayName: formatStoreLabel('Regional', '', props.regionalName),
       pendingPct: Number(props.regionalSummary.pendingPct || 0),
       readPct: Number(props.regionalSummary.readPct || 0),
       accuracyPct: Number(props.regionalSummary.accuracyPct || 0),
@@ -77,7 +84,15 @@ const chartRows = computed(() => {
   return sorted
 })
 
-const targetPercent = computed(() => (metaThreshold / chartScale) * 100)
+const chartScale = computed(() => {
+  const highest = Math.max(metaThreshold, ...chartRows.value.map((row) => Number(row.pendingPct || 0)))
+  return Math.max(10, Math.ceil(highest / 5) * 5)
+})
+const targetPercent = computed(() => (metaThreshold / chartScale.value) * 100)
+const yTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
+  ratio,
+  label: `${Number((chartScale.value * ratio).toFixed(1))}%`,
+})))
 
 function toggleCode(code) {
   const next = [...activeCodes.value]
@@ -89,7 +104,7 @@ function toggleCode(code) {
 }
 
 function selectAll() {
-  emit('update:selectedCodes', [...STORE_CODES])
+  emit('update:selectedCodes', [...props.storeCodes])
 }
 
 function getBarClass(row) {
@@ -99,9 +114,9 @@ function getBarClass(row) {
   return 'bar-danger'
 }
 
-function getBarWidth(row) {
+function getBarHeight(row) {
   const pendingPct = Number(row.pendingPct || 0)
-  return Math.min(Math.max(pendingPct, 0), chartScale)
+  return Math.min((Math.max(pendingPct, 0) / chartScale.value) * 100, 100)
 }
 
 function setHover(code) {
@@ -150,7 +165,7 @@ async function exportChart() {
 
     <div class="mb-5 flex flex-wrap gap-2">
       <button
-        v-for="code in STORE_CODES"
+        v-for="code in storeCodes"
         :key="code"
         class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
         :class="activeCodes.includes(code) ? 'border-sky-500 bg-sky-100 text-sky-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'"
@@ -163,45 +178,53 @@ async function exportChart() {
       </button>
     </div>
 
-    <div class="chart-panel rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div class="chart-panel">
       <div class="chart-header">
-        <span>Meta: 3%</span>
-        <span>{{ chartRows.length }} itens</span>
+        <div class="chart-legend">
+          <span><i class="legend-dot legend-good"></i> Até 3%</span>
+          <span><i class="legend-dot legend-warning"></i> 3% a 7%</span>
+          <span><i class="legend-dot legend-danger"></i> Acima de 7%</span>
+        </div>
+        <span class="chart-scale">Escala máxima: {{ chartScale }}%</span>
       </div>
 
-      <div class="chart-grid">
-        <div
-          v-for="row in chartRows"
-          :key="row.code"
-          class="chart-row"
-          :class="{ 'chart-row-regional': row.isRegional }"
-          @mouseenter="setHover(row.code)"
-          @mouseleave="clearHover()"
-        >
-          <div class="chart-label">
-            <span>{{ row.displayName }}</span>
-            <strong>{{ Number(row.pendingPct || 0).toFixed(2) }}%</strong>
+      <div class="chart-scroll">
+        <div class="chart-layout">
+          <div class="y-axis" aria-hidden="true">
+            <span v-for="tick in yTicks" :key="tick.ratio" :style="{ bottom: `${tick.ratio * 100}%` }">{{ tick.label }}</span>
           </div>
 
-          <div class="bar-area">
-            <div v-if="hoveredCode === row.code" class="bar-tooltip">
-              <div class="bar-tooltip-header">{{ row.displayName }}</div>
-              <div class="bar-tooltip-body">
-                <span>Pendência</span>
-                <strong>{{ Number(row.pendingPct || 0).toFixed(2) }}%</strong>
-              </div>
-              <div class="bar-tooltip-body">
-                <span>Leitura</span>
-                <strong>{{ Number(row.readPct || 0).toFixed(2) }}%</strong>
-              </div>
-              <div class="bar-tooltip-body">
-                <span>Acertabilidade</span>
-                <strong>{{ Number(row.accuracyPct || 0).toFixed(2) }}%</strong>
-              </div>
+          <div class="plot-area">
+            <div v-for="tick in yTicks" :key="`grid-${tick.ratio}`" class="grid-line" :style="{ bottom: `${tick.ratio * 100}%` }" />
+            <div class="target-line" :style="{ bottom: `${targetPercent}%` }">
+              <span>Meta 3%</span>
             </div>
-            <div class="target-line" :style="{ left: `${targetPercent}%` }" />
-            <div class="bar-track">
-              <div class="bar-fill" :class="getBarClass(row)" :style="{ width: `${getBarWidth(row)}%` }" />
+
+            <div class="bars-grid" :style="{ gridTemplateColumns: `repeat(${chartRows.length}, minmax(52px, 1fr))` }">
+              <div
+                v-for="row in chartRows"
+                :key="row.code"
+                class="chart-column"
+                :class="{ 'chart-column-regional': row.isRegional }"
+                @mouseenter="setHover(row.code)"
+                @mouseleave="clearHover()"
+              >
+                <div class="bar-stage">
+                  <div v-if="hoveredCode === row.code" class="bar-tooltip">
+                    <div class="bar-tooltip-header">{{ row.displayName }}</div>
+                    <div class="bar-tooltip-body"><span>Pendência</span><strong>{{ row.pendingPct.toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>Leitura</span><strong>{{ row.readPct.toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>Acertabilidade</span><strong>{{ row.accuracyPct.toFixed(2) }}%</strong></div>
+                  </div>
+                  <span class="bar-value" :style="{ bottom: `calc(${getBarHeight(row)}% + 8px)` }">{{ row.pendingPct.toFixed(1) }}%</span>
+                  <div class="bar-fill" :class="getBarClass(row)" :style="{ height: `${getBarHeight(row)}%` }" />
+                </div>
+
+                <div class="chart-label">
+                  <strong>{{ row.isRegional ? 'Regional' : row.code }}</strong>
+                  <span>{{ row.isRegional ? regionName : 'Loja' }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -212,44 +235,105 @@ async function exportChart() {
 
 <style scoped>
 .chart-panel {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #fff;
 }
 
 .chart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
   color: #64748b;
 }
 
-.chart-grid {
-  display: grid;
-  gap: 12px;
+.chart-legend { display: flex; flex-wrap: wrap; gap: 16px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.legend-good { background: #10b981; }
+.legend-warning { background: #f59e0b; }
+.legend-danger { background: #ef4444; }
+.chart-scale { white-space: nowrap; }
+
+.chart-scroll {
+  overflow-x: auto;
+  padding: 28px 20px 18px;
 }
 
-.chart-row {
+.chart-layout {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: 42px minmax(960px, 1fr);
+  min-width: 1010px;
+  height: 660px;
+}
+
+.y-axis {
   position: relative;
+  height: 580px;
+  margin-top: 12px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.chart-row-regional {
-  padding-top: 8px;
-  border-top: 1px solid rgba(148, 163, 184, 0.45);
-  margin-top: 4px;
+.y-axis span {
+  position: absolute;
+  right: 10px;
+  transform: translateY(50%);
+}
+
+.plot-area {
+  position: relative;
+  height: 592px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.bars-grid {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: -56px;
+  left: 0;
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+
+.chart-column {
+  display: grid;
+  grid-template-rows: 580px 56px;
+  min-width: 52px;
+  text-align: center;
+}
+
+.chart-column-regional {
+  margin-left: 8px;
+  padding-left: 14px;
+  border-left: 1px solid #cbd5e1;
+}
+
+.bar-stage {
+  position: relative;
+  height: 580px;
 }
 
 .bar-tooltip {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 10px);
+  top: 12px;
   transform: translateX(-50%);
   min-width: 170px;
   background: rgba(15, 23, 42, 0.96);
@@ -263,7 +347,7 @@ async function exportChart() {
 }
 
 .bar-tooltip-header {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -276,7 +360,7 @@ async function exportChart() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.8);
 }
 
@@ -289,78 +373,78 @@ async function exportChart() {
   font-weight: 700;
 }
 
-.chart-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: #0f172a;
-  min-width: 0;
-}
-
-.chart-label span {
-  display: block;
-  max-width: 100%;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chart-label strong {
-  font-size: 11px;
-  color: #475569;
-}
-
-.bar-area {
-  position: relative;
-  height: 26px;
-  display: flex;
-  align-items: center;
-}
-
-.bar-track {
-  position: relative;
-  width: 100%;
-  height: 18px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #e2e8f0, #f8fafc);
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  overflow: hidden;
-}
-
 .bar-fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  height: 100%;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  right: 12%;
+  bottom: 0;
+  left: 12%;
+  min-height: 2px;
+  border-radius: 8px 8px 2px 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 10px rgba(15,23,42,.1);
+  transition: height 0.45s cubic-bezier(.2,.8,.2,1), filter 0.2s ease;
+}
+
+.chart-column:hover .bar-fill {
+  filter: saturate(1.15) brightness(1.04);
+}
+
+.bar-value {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-size: 20px;
+  font-weight: 800;
+  color: #334155;
+  white-space: nowrap;
 }
 
 .bar-good {
-  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
 }
 
 .bar-warning {
-  background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%);
+  background: linear-gradient(180deg, #f59e0b 0%, #f97316 100%);
 }
 
 .bar-danger {
-  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
 }
 
 .bar-regional {
-  background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+  background: linear-gradient(180deg, #334155 0%, #0f172a 100%);
 }
 
 .target-line {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 3px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  border-top: 2px dashed #059669;
+}
+
+.target-line span {
+  position: absolute;
+  top: -22px;
+  left: 8px;
+  padding: 2px 7px;
   border-radius: 999px;
-  background: #16a34a;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
-  z-index: 2;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chart-label {
+  padding-top: 10px;
+  line-height: 1.15;
+}
+
+.chart-label strong { display: block; color: #0f172a; font-size: 15px; }
+.chart-label span { display: block; margin-top: 4px; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+
+@media (max-width: 640px) {
+  .chart-header { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .chart-scroll { padding-right: 12px; padding-left: 12px; }
 }
 </style>

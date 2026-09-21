@@ -1,6 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { exportSessionsAsJson, importSessionsFromJson, listSessions } from '../lib/database'
+import { useRoute } from 'vue-router'
+import { getRegion } from '../lib/regions'
+
+const route = useRoute()
+const region = computed(() => getRegion(route.params.region))
 
 const sessions = ref([])
 const importInput = ref(null)
@@ -48,17 +53,17 @@ function changePage(nextPage) {
 }
 
 async function loadSessions() {
-  sessions.value = await listSessions()
+  sessions.value = await listSessions(region.value.id)
   currentPage.value = 1
 }
 
 async function exportBackup() {
-  const payload = await exportSessionsAsJson()
+  const payload = await exportSessionsAsJson(region.value.id)
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `regional-sp6-backup-${new Date().toISOString().slice(0, 10)}.json`
+  link.download = `regional-${region.value.id}-backup-${new Date().toISOString().slice(0, 10)}.json`
   link.click()
   URL.revokeObjectURL(url)
   statusText.value = 'Backup exportado com sucesso.'
@@ -89,7 +94,7 @@ onMounted(async () => {
   <div class="space-y-6">
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Backup</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-900">Exportação e importação do histórico</h1>
+      <h1 class="mt-2 text-3xl font-bold text-slate-900">Exportação e importação · {{ region.code }}</h1>
     </div>
 
     <div class="grid gap-6 lg:grid-cols-2">

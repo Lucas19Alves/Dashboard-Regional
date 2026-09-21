@@ -3,11 +3,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import UploadModal from '../components/UploadModal.vue'
 import WeekCalendar from '../components/WeekCalendar.vue'
 import MetricCard from '../components/MetricCard.vue'
-import StoreBarChart from '../components/StoreBarChart.vue'
-import { getCurrentWeekDays, REGIONAL_NAME, summarizeStores, normalizeStoreMetrics, buildForecast, STORE_CODES, filterAllowedStoreRows, parseNumeric, isCancelledStore } from '../lib/metrics'
+import { getCurrentWeekDays, summarizeStores, normalizeStoreMetrics, buildForecast, filterAllowedStoreRows, parseNumeric, isCancelledStore } from '../lib/metrics'
 import { deleteSession, listSessions, upsertSession } from '../lib/database'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
 import * as XLSX from 'xlsx'
+import { useRoute } from 'vue-router'
+import { getRegion } from '../lib/regions'
+
+const route = useRoute()
+const region = computed(() => getRegion(route.params.region))
+const storeCodes = computed(() => region.value.storeCodes)
 
 const sessions = ref([])
 const weekCursor = ref(new Date())
@@ -15,7 +20,7 @@ const currentWeek = computed(() => getCurrentWeekDays(weekCursor.value))
 const isModalOpen = ref(false)
 const isStoreCancellationModalOpen = ref(false)
 const selectedDay = ref(null)
-const selectedChartCodes = ref([...STORE_CODES])
+const selectedChartCodes = ref([])
 
 const weekLabel = computed(() => {
   if (!currentWeek.value.length) return 'Semana'
@@ -38,21 +43,21 @@ const activeSession = computed(() => {
 
 const summary = computed(() => {
   const stores = activeSession.value?.stores || []
-  return stores.length ? summarizeStores(stores) : { totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0, readPct: 0, pendingPct: 0, accuracyPct: 0 }
+  return stores.length ? summarizeStores(stores, storeCodes.value) : { totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0, readPct: 0, pendingPct: 0, accuracyPct: 0 }
 })
 
 const forecast = computed(() => buildForecast(summary.value))
 
 const selectedChartStores = computed(() => {
-  const stores = filterAllowedStoreRows(activeSession.value?.stores || [])
+  const stores = filterAllowedStoreRows(activeSession.value?.stores || [], storeCodes.value)
   return stores.filter((store) => selectedChartCodes.value.includes(store.code))
 })
 
-const selectedChartSummary = computed(() => summarizeStores(selectedChartStores.value))
+const selectedChartSummary = computed(() => summarizeStores(selectedChartStores.value, storeCodes.value))
 
 const storeStatusRows = computed(() => {
   const rows = (activeSession.value?.stores || [])
-    .filter((store) => STORE_CODES.includes(store.code))
+    .filter((store) => storeCodes.value.includes(store.code))
     .sort((a, b) => a.code.localeCompare(b.code))
 
   return rows.map((store) => ({
@@ -84,7 +89,7 @@ function getDayByIso(dateIso) {
 }
 
 async function cleanupDemoAudit() {
-  const entries = await listSessions()
+  const entries = await listSessions(region.value.id)
   const demoItems = entries.filter(
     (session) => session.sourceFile === 'demo-regional-sp6.xlsx' || session.id?.startsWith('demo-'),
   )
@@ -96,7 +101,7 @@ async function cleanupDemoAudit() {
 
 async function loadSessions() {
   await cleanupDemoAudit()
-  sessions.value = await listSessions()
+  sessions.value = await listSessions(region.value.id)
 
   if (!selectedDay.value && currentWeek.value.length) {
     const todayIso = new Date().toISOString().slice(0, 10)
@@ -160,7 +165,7 @@ function parseSpreadSheetRows(file) {
       const label = String(nameCell).trim()
       const isAggregate = /regional|regiao|macro|sub-regiao|macro regional|regiao de venda/i.test(label)
 
-      if (!STORE_CODES.includes(code) || isAggregate) {
+      if (!storeCodes.value.includes(code) || isAggregate) {
         return null
       }
 
@@ -180,7 +185,7 @@ function parseSpreadSheetRows(file) {
 async function handleUpload(file) {
   if (!selectedDay.value) return
 
-  const rows = filterAllowedStoreRows(parseSpreadSheetRows(await file.arrayBuffer()))
+  const rows = filterAllowedStoreRows(parseSpreadSheetRows(await file.arrayBuffer()), storeCodes.value)
 
   if (!rows.length) {
     window.alert('Nenhuma loja foi identificada. Verifique se a planilha contém os campos: Árvore, Itens com Estoque, Não Lidas com Estoque, Atualizadas com Estoque e Desatualizadas.')
@@ -209,8 +214,9 @@ async function handleUpload(file) {
   })
 
   const payload = {
-    id: `${selectedDay.value.iso}-${selectedDay.value.key}`,
-    region: REGIONAL_NAME,
+    id: `${region.value.id}-${selectedDay.value.iso}-${selectedDay.value.key}`,
+    regionId: region.value.id,
+    region: region.value.name,
     weekStart: currentWeek.value[0]?.iso,
     dayKey: selectedDay.value.key,
     dayLabel: selectedDay.value.label,
@@ -218,8 +224,8 @@ async function handleUpload(file) {
     uploadedAt: new Date().toISOString(),
     sourceFile: file.name,
     stores: normalizedStores,
-    summary: summarizeStores(normalizedStores),
-    forecast: buildForecast(summarizeStores(normalizedStores)),
+    summary: summarizeStores(normalizedStores, storeCodes.value),
+    forecast: buildForecast(summarizeStores(normalizedStores, storeCodes.value)),
   }
 
   await upsertSession(payload)
@@ -258,8 +264,8 @@ async function toggleStoreCancellation(code, nextValue) {
   const updatedSession = {
     ...session,
     stores: updatedStores,
-    summary: summarizeStores(updatedStores),
-    forecast: buildForecast(summarizeStores(updatedStores)),
+    summary: summarizeStores(updatedStores, storeCodes.value),
+    forecast: buildForecast(summarizeStores(updatedStores, storeCodes.value)),
   }
 
   sessions.value = sessions.value.map((item) => (item.id === updatedSession.id ? updatedSession : item))
@@ -299,8 +305,8 @@ watch(
 watch(
   () => activeSession.value?.stores,
   () => {
-    const allowed = filterAllowedStoreRows(activeSession.value?.stores || []).map((store) => store.code)
-    selectedChartCodes.value = allowed.length ? allowed : [...STORE_CODES]
+    const allowed = filterAllowedStoreRows(activeSession.value?.stores || [], storeCodes.value).map((store) => store.code)
+    selectedChartCodes.value = allowed.length ? allowed : [...storeCodes.value]
   },
   { immediate: true },
 )
@@ -316,9 +322,9 @@ onMounted(async () => {
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Auditorias</p>
-          <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">Regional SP6</h1>
+          <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">{{ region.name }}</h1>
           <p class="mt-2 text-sm text-slate-600">
-            Acompanhamento consolidado das lojas 008, 015, 093, 096, 112, 127, 149, 151, 233, 270, 280, 282 e 337.
+            {{ storeCodes.length ? `Acompanhamento consolidado de ${storeCodes.length} lojas: ${storeCodes.join(', ')}.` : 'A estrutura está pronta para receber a lista de lojas desta regional.' }}
           </p>
         </div>
         <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -327,6 +333,16 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div v-if="!storeCodes.length" class="setup-empty-state">
+      <div class="setup-empty-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">Configuração preparada</p>
+        <h2 class="mt-2 text-2xl font-bold text-slate-900">SP4 aguardando a definição das lojas</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Assim que os códigos forem informados, a regional passará a usar o mesmo fluxo completo da SP6, com calendário, importação, indicadores, gráficos, relatórios e backup próprios.</p>
+      </div>
+    </div>
+
+    <template v-else>
     <WeekCalendar
       :days="currentWeek"
       :sessions="sessions"
@@ -412,7 +428,7 @@ onMounted(async () => {
             </div>
             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
               <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Lojas</div>
-              <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">{{ STORE_CODES.length }}</div>
+              <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">{{ storeCodes.length }}</div>
             </div>
           </div>
 
@@ -478,6 +494,8 @@ onMounted(async () => {
         :stores="selectedChartStores"
         :regional-summary="selectedChartSummary"
         :selected-codes="selectedChartCodes"
+        :store-codes="storeCodes"
+        :regional-name="region.name"
         @update:selected-codes="selectedChartCodes = $event"
       />
     </div>
@@ -487,7 +505,7 @@ onMounted(async () => {
     </div>
 
     <div v-if="isModalOpen && selectedDay" class="relative">
-      <UploadModal @close="isModalOpen = false" @upload="handleUpload" />
+      <UploadModal :regional-name="region.name" @close="isModalOpen = false" @upload="handleUpload" />
     </div>
 
     <div v-if="isStoreCancellationModalOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
@@ -536,5 +554,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>

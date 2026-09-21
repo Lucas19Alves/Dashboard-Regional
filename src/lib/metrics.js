@@ -22,9 +22,9 @@ export function toPercent(value, total) {
   return Number(((value / total) * 100).toFixed(2))
 }
 
-export function formatStoreLabel(code, storeName = '') {
-  if (!code && !storeName) return REGIONAL_NAME
-  if (String(code).toLowerCase() === 'regional') return REGIONAL_NAME
+export function formatStoreLabel(code, storeName = '', regionalName = REGIONAL_NAME) {
+  if (!code && !storeName) return regionalName
+  if (String(code).toLowerCase() === 'regional') return regionalName
 
   const normalizedCode = String(code ?? '').trim()
   const cleanedName = String(storeName ?? '').trim()
@@ -64,11 +64,11 @@ export function isCancelledStore(row) {
   })
 }
 
-export function filterAllowedStoreRows(rows = []) {
+export function filterAllowedStoreRows(rows = [], allowedStoreCodes = STORE_CODES) {
   const list = Array.isArray(rows) ? rows : []
   return list.filter((row) => {
     const code = normalizeStoreCode(row?.code ?? row?.storeCode ?? row?.loja ?? '')
-    return STORE_CODES.includes(code) && !isCancelledStore(row)
+    return allowedStoreCodes.includes(code) && !isCancelledStore(row)
   })
 }
 
@@ -158,8 +158,8 @@ export function normalizeStoreMetrics(row) {
   }
 }
 
-export function summarizeStores(storeRows) {
-  const validRows = filterAllowedStoreRows(storeRows || [])
+export function summarizeStores(storeRows, allowedStoreCodes = STORE_CODES) {
+  const validRows = filterAllowedStoreRows(storeRows || [], allowedStoreCodes)
   const totals = validRows.reduce(
     (acc, store) => {
       acc.totalSku += Number(store.totalSku || 0)

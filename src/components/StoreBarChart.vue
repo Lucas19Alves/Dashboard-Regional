@@ -52,7 +52,7 @@ async function exportChart() {
 
     <div class="space-y-3">
       <div v-for="store in chartStores" :key="store.code" class="space-y-1">
-        <div class="flex items-center justify-between text-sm font-medium text-slate-700">
+        <div class="flex items-center justify-between text-base font-semibold text-slate-700">
           <span>{{ store.code }}</span>
           <span>{{ store.readPct.toFixed(2) }}%</span>
         </div>
@@ -60,7 +60,7 @@ async function exportChart() {
           <div class="h-full rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-emerald-600"
             :style="{ width: `${Math.min(store.readPct, 100)}%` }" ></div>
         </div>
-        <div class="flex items-center justify-between text-[11px] text-slate-500">
+        <div class="flex items-center justify-between text-sm text-slate-500">
           <span>{{ store.pendingPct.toFixed(2) }}% pendente</span>
           <span>{{ store.accuracyPct.toFixed(2) }}% acertabilidade</span>
         </div>

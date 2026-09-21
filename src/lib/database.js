@@ -54,9 +54,14 @@ function runStoreRequest(storeName, mode, requestBuilder) {
   })
 }
 
-export async function listSessions() {
+export async function listSessions(regionId = null) {
   const result = await runStoreRequest(STORE_NAME, 'readonly', (store) => store.getAll())
-  return Array.isArray(result) ? result : []
+  const sessions = Array.isArray(result) ? result : []
+  if (!regionId) return sessions
+  return sessions.filter((session) => {
+    if (session.regionId) return session.regionId === regionId
+    return regionId === 'sp6' && (!session.region || session.region === 'Regional SP6')
+  })
 }
 
 export async function upsertSession(session) {
@@ -70,10 +75,11 @@ export async function deleteSession(sessionId) {
   return true
 }
 
-export async function exportSessionsAsJson() {
-  const sessions = await listSessions()
+export async function exportSessionsAsJson(regionId = null) {
+  const sessions = await listSessions(regionId)
   return {
     exportedAt: new Date().toISOString(),
+    regionId,
     sessions,
   }
 }
