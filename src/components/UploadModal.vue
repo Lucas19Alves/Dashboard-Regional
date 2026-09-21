@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 
 const emit = defineEmits(['close', 'upload'])
+defineProps({ regionalName: { type: String, default: 'regional' } })
 const fileInput = ref(null)
 const selectedFile = ref(null)
 
@@ -30,7 +31,7 @@ function submitUpload() {
       <div class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
         <label class="flex cursor-pointer flex-col items-center justify-center gap-3 text-center">
           <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">Arquivo</span>
-          <span class="text-sm text-slate-600">Selecione o consolidado geral da regional SP6</span>
+          <span class="text-sm text-slate-600">Selecione o consolidado geral da {{ regionalName }}</span>
           <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" @change="handleFileChange" />
           <span class="rounded-xl bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
             {{ selectedFile ? selectedFile.name : 'Escolher planilha' }}

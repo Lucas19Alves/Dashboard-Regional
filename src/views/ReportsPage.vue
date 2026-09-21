@@ -1,13 +1,19 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { listSessions } from '../lib/database'
-import { STORE_CODES, summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
+import { summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
 import { exportCardAsPng } from '../lib/exportImage'
+import { useRoute } from 'vue-router'
+import { getRegion } from '../lib/regions'
+
+const route = useRoute()
+const region = computed(() => getRegion(route.params.region))
+const storeCodes = computed(() => region.value.storeCodes)
 
 const sessions = ref([])
 const startDate = ref('')
 const endDate = ref('')
-const selectedStores = ref([...STORE_CODES])
+const selectedStores = ref([])
 const sortMode = ref('pending')
 const metaThreshold = 3
 const quickRanges = [7, 15, 30, 60]
@@ -39,7 +45,7 @@ const filteredSessions = computed(() => {
 })
 
 const filteredStoreRows = computed(() => {
-  const totals = Object.fromEntries(STORE_CODES.map((code) => [code, {
+  const totals = Object.fromEntries(storeCodes.value.map((code) => [code, {
     code,
     name: '',
     totalSku: 0,
@@ -66,11 +72,11 @@ const filteredStoreRows = computed(() => {
     .filter((store) => store.totalSku > 0 || store.pendingItems > 0 || store.updatedItems > 0 || store.outdatedItems > 0)
     .map((store) => ({
       ...store,
-      ...summarizeStores([store]),
+      ...summarizeStores([store], storeCodes.value),
     }))
 })
 
-const regionalSummary = computed(() => summarizeStores(filteredStoreRows.value))
+const regionalSummary = computed(() => summarizeStores(filteredStoreRows.value, storeCodes.value))
 
 const rankedStores = computed(() => {
   const base = [...filteredStoreRows.value].map((store) => ({
@@ -108,13 +114,13 @@ const comparisonRows = computed(() => {
 
   const rows = rankedStores.value.map((store) => ({
     ...store,
-    displayName: formatStoreLabel(store.code, store.name),
+    displayName: formatStoreLabel(store.code, store.name, region.value.name),
     isRegional: false,
   }))
 
   return [{
     ...regional,
-    displayName: formatStoreLabel('Regional'),
+    displayName: formatStoreLabel('Regional', '', region.value.name),
   }, ...rows]
 })
 
@@ -130,7 +136,7 @@ const trendDates = computed(() => {
 const regionalTrendSeries = computed(() => {
   return filteredSessions.value.map((session) => {
     const selected = (session.stores || []).filter((store) => selectedStores.value.includes(store.code) && !isCancelledStore(store))
-    const summary = summarizeStores(selected)
+    const summary = summarizeStores(selected, storeCodes.value)
     return {
       isoDate: session.isoDate,
       label: session.isoDate ? new Date(`${session.isoDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
@@ -144,7 +150,7 @@ const regionalTrendSeries = computed(() => {
 })
 
 const storeTrendSeries = computed(() => {
-  const codes = selectedStores.value.length ? selectedStores.value : STORE_CODES
+  const codes = selectedStores.value.length ? selectedStores.value : storeCodes.value
   return codes.map((code, index) => {
     const matchStore = (filteredSessions.value || [])
       .flatMap((session) => session.stores || [])
@@ -156,7 +162,7 @@ const storeTrendSeries = computed(() => {
       color: chartPalette[index % chartPalette.length],
       points: filteredSessions.value.map((session) => {
         const match = (session.stores || []).find((store) => store.code === code && !isCancelledStore(store))
-        const summary = match ? summarizeStores([match]) : { readPct: 0, pendingPct: 0, accuracyPct: 0, totalSku: 0, pendingItems: 0 }
+        const summary = match ? summarizeStores([match], storeCodes.value) : { readPct: 0, pendingPct: 0, accuracyPct: 0, totalSku: 0, pendingItems: 0 }
         return {
           isoDate: session.isoDate,
           label: session.isoDate ? new Date(`${session.isoDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
@@ -208,13 +214,24 @@ function getLinePath(points) {
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
 }
 
+function getAreaPath(points) {
+  if (!points.length) return ''
+  return `${getLinePath(points)} L ${points[points.length - 1].x} ${chartHeight - chartPadding} L ${points[0].x} ${chartHeight - chartPadding} Z`
+}
+
 const hoveredTrendIndex = ref(null)
 const hoveredComparisonCode = ref(null)
-const comparisonMetaPosition = computed(() => {
+const comparisonScale = computed(() => {
   const values = comparisonRows.value.map((row) => Number(row.pendingPct || 0))
-  const maxPending = Math.max(10, ...values)
-  return Math.min((metaThreshold / maxPending) * 100, 100)
+  return Math.max(10, Math.ceil(Math.max(metaThreshold, ...values) / 5) * 5)
 })
+const comparisonMetaPosition = computed(() => {
+  return Math.min((metaThreshold / comparisonScale.value) * 100, 100)
+})
+
+function getComparisonWidth(value) {
+  return Math.min((Math.max(Number(value || 0), 0) / comparisonScale.value) * 100, 100)
+}
 const currentHoverDate = computed(() => {
   if (hoveredTrendIndex.value === null) return null
   return trendDates.value[hoveredTrendIndex.value] || null
@@ -226,7 +243,7 @@ const hoverRows = computed(() => {
   return chartSeries.value
     .map((series) => ({
       code: series.code,
-    displayName: formatStoreLabel(series.code, series.name),
+    displayName: formatStoreLabel(series.code, series.name, region.value.name),
     color: series.color,
     value: series.points[hoveredTrendIndex.value]?.value ?? null,
     pendingPct: series.points[hoveredTrendIndex.value]?.pendingPct ?? 0,
@@ -304,21 +321,21 @@ const insights = computed(() => {
       title: 'Regional',
       tone: delta >= 0 ? 'positive' : 'negative',
       body: delta >= 0
-        ? `${formatStoreLabel('Regional')} avançou ${delta.toFixed(2)} p.p. no período, mostrando aceleração consistente na leitura.`
-        : `${formatStoreLabel('Regional')} recuou ${Math.abs(delta).toFixed(2)} p.p. e precisa reforço operacional para recuperar ritmo.`,
+        ? `${formatStoreLabel('Regional', '', region.value.name)} avançou ${delta.toFixed(2)} p.p. no período, mostrando aceleração consistente na leitura.`
+        : `${formatStoreLabel('Regional', '', region.value.name)} recuou ${Math.abs(delta).toFixed(2)} p.p. e precisa reforço operacional para recuperar ritmo.`,
     },
     {
       title: 'Maior desempenho',
       tone: 'positive',
       body: bestStore
-        ? `${formatStoreLabel(bestStore.code)} lidera o comparativo com ${(bestStore.points[bestStore.points.length - 1]?.value ?? 0).toFixed(2)}% de leitura e ${(bestStore.points[bestStore.points.length - 1]?.pendingPct ?? 0).toFixed(2)}% de pendência.`
+        ? `${formatStoreLabel(bestStore.code, bestStore.name, region.value.name)} lidera o comparativo com ${(bestStore.points[bestStore.points.length - 1]?.value ?? 0).toFixed(2)}% de leitura e ${(bestStore.points[bestStore.points.length - 1]?.pendingPct ?? 0).toFixed(2)}% de pendência.`
         : 'Ainda não há loja com volume suficiente para comparar.',
     },
     {
       title: 'Recuperação',
       tone: biggestRise ? 'positive' : 'neutral',
       body: biggestRise
-        ? `${formatStoreLabel(biggestRise.code)} foi a loja com melhor recuperação, ganhando ${(((biggestRise.points[biggestRise.points.length - 1]?.value ?? 0) - (biggestRise.points[0]?.value ?? 0))).toFixed(2)} p.p. no período.`
+        ? `${formatStoreLabel(biggestRise.code, biggestRise.name, region.value.name)} foi a loja com melhor recuperação, ganhando ${(((biggestRise.points[biggestRise.points.length - 1]?.value ?? 0) - (biggestRise.points[0]?.value ?? 0))).toFixed(2)} p.p. no período.`
         : 'Não há recuperação relevante entre as lojas selecionadas.',
     },
     {
@@ -330,7 +347,7 @@ const insights = computed(() => {
 })
 
 const auditCount = computed(() => filteredSessions.value.length)
-const selectedStoresLabel = computed(() => selectedStores.value.length === STORE_CODES.length ? 'Todas' : selectedStores.value.join(', '))
+const selectedStoresLabel = computed(() => selectedStores.value.length === storeCodes.value.length ? 'Todas' : selectedStores.value.join(', '))
 
 function applyQuickPeriod(days) {
   if (!allDateValues.value.length) {
@@ -348,7 +365,7 @@ function applyQuickPeriod(days) {
 }
 
 function selectAllStores() {
-  selectedStores.value = [...STORE_CODES]
+  selectedStores.value = [...storeCodes.value]
 }
 
 function clearStoreSelection() {
@@ -374,7 +391,7 @@ function resetPeriod() {
 }
 
 async function loadSessions() {
-  const all = await listSessions()
+  const all = await listSessions(region.value.id)
   sessions.value = [...all].sort((a, b) => new Date(a.isoDate || a.uploadedAt) - new Date(b.isoDate || b.uploadedAt))
 
   if (allDateValues.value.length) {
@@ -384,6 +401,7 @@ async function loadSessions() {
 }
 
 onMounted(async () => {
+  selectedStores.value = [...storeCodes.value]
   await loadSessions()
 })
 </script>
@@ -392,7 +410,7 @@ onMounted(async () => {
   <div class="space-y-6">
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Relatórios</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-900">Comparativo por período</h1>
+      <h1 class="mt-2 text-3xl font-bold text-slate-900">Comparativo por período · {{ region.code }}</h1>
     </div>
 
     <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -450,7 +468,7 @@ onMounted(async () => {
 
         <div class="mt-4 flex flex-wrap gap-2">
           <button
-            v-for="code in STORE_CODES"
+            v-for="code in storeCodes"
             :key="code"
             class="rounded-full border px-2.5 py-1.5 text-xs font-semibold transition"
             :class="selectedStores.includes(code) ? 'border-sky-500 bg-sky-100 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'"
@@ -537,6 +555,15 @@ onMounted(async () => {
       <div v-if="chartPoints.length" class="space-y-4">
         <div class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-inner">
           <svg viewBox="0 0 640 230" class="h-[420px] w-full cursor-crosshair" role="img" aria-label="Comparativo de leitura por loja e regional" @mousemove="handleChartMove" @mouseleave="clearTrendHover">
+            <defs>
+              <linearGradient id="regionalArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.24" />
+                <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.01" />
+              </linearGradient>
+              <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.14" />
+              </filter>
+            </defs>
             <g>
               <line x1="36" y1="194" x2="604" y2="194" stroke="#cbd5e1" stroke-width="1" />
               <line x1="36" y1="36" x2="604" y2="36" stroke="#e2e8f0" stroke-width="1" />
@@ -545,13 +572,15 @@ onMounted(async () => {
             </g>
 
             <g>
-              <text x="16" y="198" fill="#64748b" font-size="10">0%</text>
-              <text x="10" y="40" fill="#64748b" font-size="10">100%</text>
+              <text x="16" y="198" fill="#64748b" font-size="13">0%</text>
+              <text x="6" y="40" fill="#64748b" font-size="13">100%</text>
             </g>
 
             <g v-if="hoveredTrendIndex !== null && currentHoverDate">
               <line :x1="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y1="36" :x2="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y2="194" stroke="#64748b" stroke-dasharray="4 6" stroke-width="1" />
             </g>
+
+            <path v-if="chartPoints[0]?.points?.length" :d="getAreaPath(chartPoints[0].points)" fill="url(#regionalArea)" />
 
             <path
               v-for="series in chartPoints"
@@ -562,6 +591,7 @@ onMounted(async () => {
               stroke-width="2.5"
               stroke-linecap="round"
               stroke-linejoin="round"
+              filter="url(#lineGlow)"
             />
 
             <g v-if="hoveredTrendIndex !== null && currentHoverDate">
@@ -578,7 +608,7 @@ onMounted(async () => {
             </g>
 
             <g>
-              <text v-for="date in trendDates" :key="`${date.isoDate}-label`" :x="36 + (trendDates.indexOf(date) * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y="214" fill="#64748b" font-size="10" text-anchor="middle">
+              <text v-for="date in trendDates" :key="`${date.isoDate}-label`" :x="36 + (trendDates.indexOf(date) * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y="216" fill="#64748b" font-size="13" font-weight="600" text-anchor="middle">
                 {{ date.label }}
               </text>
             </g>
@@ -671,7 +701,7 @@ onMounted(async () => {
             <div
               class="chart-fill"
               :class="row.isRegional ? 'regional' : row.pendingPct <= metaThreshold ? 'good' : row.pendingPct <= 7 ? 'warning' : 'danger'"
-              :style="{ width: `${Math.min(Number(row.pendingPct || 0), 100)}%` }"
+              :style="{ width: `${getComparisonWidth(row.pendingPct)}%` }"
             />
           </div>
         </div>
@@ -700,7 +730,7 @@ onMounted(async () => {
           <tbody class="divide-y divide-slate-200 bg-white text-sm text-slate-700">
             <tr v-for="row in rankedStores" :key="row.code">
               <td class="px-4 py-3 font-semibold text-slate-900">
-                <span class="store-name-cell">{{ formatStoreLabel(row.code, row.name) }}</span>
+                <span class="store-name-cell">{{ formatStoreLabel(row.code, row.name, region.name) }}</span>
               </td>
               <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
               <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
@@ -748,7 +778,7 @@ onMounted(async () => {
 }
 
 .comparison-tooltip-header {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -761,7 +791,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.8);
 }
 
@@ -779,7 +809,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: #0f172a;
   min-width: 0;
 }

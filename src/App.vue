@@ -1,14 +1,20 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
+import { useRoute } from 'vue-router'
+import { getRegion } from './lib/regions'
 
 const isInfoModalOpen = ref(false)
 
-const menuItems = [
-  { name: 'Auditorias', to: '/', icon: 'fa-solid fa-calendar-days' },
-  { name: 'Relatórios', to: '/reports', icon: 'fa-solid fa-chart-column' },
-  { name: 'Backup', to: '/backup', icon: 'fa-solid fa-floppy-disk' },
-]
+const route = useRoute()
+const regionId = computed(() => String(route.params.region || ''))
+const activeRegion = computed(() => getRegion(regionId.value))
+const isRegionalArea = computed(() => Boolean(route.params.region))
+const menuItems = computed(() => [
+  { name: 'Auditorias', to: `/regional/${regionId.value}/auditorias`, icon: 'fa-solid fa-calendar-days' },
+  { name: 'Relatórios', to: `/regional/${regionId.value}/relatorios`, icon: 'fa-solid fa-chart-column' },
+  { name: 'Backup', to: `/regional/${regionId.value}/backup`, icon: 'fa-solid fa-floppy-disk' },
+])
 
 const projectLinks = [
   { label: 'GitHub', icon: 'fab fa-github', href: 'https://github.com/Lucas19Alves' },
@@ -27,11 +33,16 @@ function closeInfo() {
 
 <template>
   <div class="app-shell">
+    <RouterLink v-if="isRegionalArea" to="/" class="region-switcher" title="Trocar regional">
+      <i class="fa-solid fa-arrow-left"></i>
+      <span>Regionais</span>
+      <strong>{{ activeRegion.code }}</strong>
+    </RouterLink>
     <main class="content-panel">
       <RouterView />
     </main>
 
-    <nav class="bottom-navbar" aria-label="Navegação principal">
+    <nav v-if="isRegionalArea" class="bottom-navbar" aria-label="Navegação principal">
       <template v-for="item in menuItems" :key="item.name">
         <RouterLink :to="item.to" class="nav-pill" active-class="nav-pill-active" :title="item.name">
           <i :class="item.icon" aria-hidden="true"></i>
