@@ -24,6 +24,18 @@ const props = defineProps({
     type: String,
     default: 'Regional SP6',
   },
+  metricTitle: {
+    type: String,
+    default: '% pendente por loja e regional',
+  },
+  primaryLabel: {
+    type: String,
+    default: 'Pendência',
+  },
+  secondaryLabel: {
+    type: String,
+    default: 'Acertabilidade',
+  },
 })
 
 const emit = defineEmits(['update:selectedCodes'])
@@ -60,6 +72,8 @@ const chartRows = computed(() => {
       pendingPct: Number(props.regionalSummary.pendingPct || 0),
       readPct: Number(props.regionalSummary.readPct || 0),
       accuracyPct: Number(props.regionalSummary.accuracyPct || 0),
+      recoveryPct: Number(props.regionalSummary.recoveryPct || 0),
+      presencePct: Number(props.regionalSummary.presencePct || 0),
       isRegional: true,
     })
   }
@@ -70,7 +84,7 @@ const chartRows = computed(() => {
   } else if (sortMode.value === 'read') {
     sorted.sort((a, b) => (a.isRegional === b.isRegional ? b.readPct - a.readPct : a.isRegional ? 1 : -1))
   } else if (sortMode.value === 'accuracy') {
-    sorted.sort((a, b) => (a.isRegional === b.isRegional ? b.accuracyPct - a.accuracyPct : a.isRegional ? 1 : -1))
+    sorted.sort((a, b) => (a.isRegional === b.isRegional ? getSecondaryValue(b) - getSecondaryValue(a) : a.isRegional ? 1 : -1))
   } else {
     sorted.sort((a, b) => (a.isRegional === b.isRegional ? a.code.localeCompare(b.code) : a.isRegional ? 1 : -1))
   }
@@ -127,6 +141,12 @@ function clearHover() {
   hoveredCode.value = null
 }
 
+function getSecondaryValue(row) {
+  if (props.secondaryLabel === 'Recuperação') return Number(row.recoveryPct || 0)
+  if (props.secondaryLabel === 'Presença') return Number(row.readPct || 0)
+  return Number(row.accuracyPct || 0)
+}
+
 const chartCard = ref(null)
 
 async function exportChart() {
@@ -140,7 +160,7 @@ async function exportChart() {
     <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Indicador principal</p>
-        <h3 class="mt-2 text-xl font-semibold text-slate-900">% pendente por loja e regional</h3>
+        <h3 class="mt-2 text-xl font-semibold text-slate-900">{{ metricTitle }}</h3>
       </div>
 
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -156,8 +176,8 @@ async function exportChart() {
         <label class="text-sm font-medium text-slate-700">Ordenar</label>
         <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
           <option value="pending">Pendência</option>
-          <option value="read">Leitura</option>
-          <option value="accuracy">Acertabilidade</option>
+          <option value="read">{{ primaryLabel === 'Pendência' ? 'Leitura' : 'Presença final' }}</option>
+          <option value="accuracy">{{ secondaryLabel }}</option>
           <option value="name">Loja</option>
         </select>
       </div>
@@ -212,9 +232,9 @@ async function exportChart() {
                 <div class="bar-stage">
                   <div v-if="hoveredCode === row.code" class="bar-tooltip">
                     <div class="bar-tooltip-header">{{ row.displayName }}</div>
-                    <div class="bar-tooltip-body"><span>Pendência</span><strong>{{ row.pendingPct.toFixed(2) }}%</strong></div>
-                    <div class="bar-tooltip-body"><span>Leitura</span><strong>{{ row.readPct.toFixed(2) }}%</strong></div>
-                    <div class="bar-tooltip-body"><span>Acertabilidade</span><strong>{{ row.accuracyPct.toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>{{ primaryLabel }}</span><strong>{{ row.pendingPct.toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>Presença final</span><strong>{{ row.readPct.toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>{{ secondaryLabel }}</span><strong>{{ getSecondaryValue(row).toFixed(2) }}%</strong></div>
                   </div>
                   <span class="bar-value" :style="{ bottom: `calc(${getBarHeight(row)}% + 8px)` }">{{ row.pendingPct.toFixed(1) }}%</span>
                   <div class="bar-fill" :class="getBarClass(row)" :style="{ height: `${getBarHeight(row)}%` }" />

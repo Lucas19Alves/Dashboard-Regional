@@ -1,10 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
 import { getRegion } from './lib/regions'
 
 const isInfoModalOpen = ref(false)
+const installPrompt = ref(null)
+const canInstall = ref(false)
 
 const route = useRoute()
 const regionId = computed(() => String(route.params.region || ''))
@@ -29,6 +31,23 @@ function openInfo() {
 function closeInfo() {
   isInfoModalOpen.value = false
 }
+
+function captureInstallPrompt(event) {
+  event.preventDefault()
+  installPrompt.value = event
+  canInstall.value = true
+}
+
+async function installApp() {
+  if (!installPrompt.value) return
+  await installPrompt.value.prompt()
+  await installPrompt.value.userChoice
+  installPrompt.value = null
+  canInstall.value = false
+}
+
+onMounted(() => window.addEventListener('beforeinstallprompt', captureInstallPrompt))
+onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureInstallPrompt))
 </script>
 
 <template>
@@ -53,6 +72,10 @@ function closeInfo() {
 
     <button type="button" class="info-fab" aria-label="Informações do projeto" title="Informações" @click="openInfo()">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    </button>
+    <button v-if="canInstall" type="button" class="install-fab" title="Instalar aplicativo" @click="installApp">
+      <i class="fa-solid fa-download" aria-hidden="true"></i>
+      <span>Instalar</span>
     </button>
   </div>
 

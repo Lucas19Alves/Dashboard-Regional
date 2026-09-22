@@ -5,6 +5,7 @@ import { summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metr
 import { exportCardAsPng } from '../lib/exportImage'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
+import StoreTowerChart from '../components/StoreTowerChart.vue'
 
 const route = useRoute()
 const region = computed(() => getRegion(route.params.region))
@@ -15,8 +16,30 @@ const startDate = ref('')
 const endDate = ref('')
 const selectedStores = ref([])
 const sortMode = ref('pending')
+const selectedAuditType = ref('Etiqueta')
+const auditTypes = ['Etiqueta', 'Presença', 'Ruptura']
 const metaThreshold = 3
 const quickRanges = [7, 15, 30, 60]
+
+function getSessionAuditType(session) {
+  if (session.auditType) return session.auditType
+  if (session.dayKey === 'tuesday') return 'Presença'
+  if (session.dayKey === 'wednesday') return 'Ruptura'
+  return 'Etiqueta'
+}
+
+const reportLabels = computed(() => {
+  if (selectedAuditType.value === 'Etiqueta') {
+    return { read: 'Leitura regional', pending: 'Pendência', accuracy: 'Acertabilidade', chart: 'Pendência por loja e regional', secondary: 'Acertabilidade' }
+  }
+  return {
+    read: 'Presença final',
+    pending: 'Ruptura final',
+    accuracy: selectedAuditType.value === 'Ruptura' ? 'Recuperação' : 'Presença inicial',
+    chart: 'Ruptura por loja e regional',
+    secondary: selectedAuditType.value === 'Ruptura' ? 'Recuperação' : 'Presença',
+  }
+})
 
 function toIsoDateLocal(date) {
   const year = date.getFullYear()
@@ -36,6 +59,7 @@ const allDateValues = computed(() => {
 const filteredSessions = computed(() => {
   return [...(sessions.value || [])]
     .filter((session) => {
+      if (getSessionAuditType(session) !== selectedAuditType.value) return false
       if (!session.isoDate) return true
       if (startDate.value && session.isoDate < startDate.value) return false
       if (endDate.value && session.isoDate > endDate.value) return false
@@ -52,29 +76,41 @@ const filteredStoreRows = computed(() => {
     pendingItems: 0,
     updatedItems: 0,
     outdatedItems: 0,
+    presenceItems: 0,
+    ruptureItems: 0,
+    recoveredItems: 0,
+    cancellationCount: 0,
   }]))
 
   for (const session of filteredSessions.value) {
     for (const store of session.stores || []) {
-      if (isCancelledStore(store)) continue
       if (!selectedStores.value.includes(store.code)) continue
       const target = totals[store.code]
       if (!target) continue
+      if (isCancelledStore(store)) {
+        target.cancellationCount += 1
+        continue
+      }
       if (!target.name && store.name) target.name = store.name
       target.totalSku += Number(store.totalSku || 0)
       target.pendingItems += Number(store.pendingItems || 0)
       target.updatedItems += Number(store.updatedItems || 0)
       target.outdatedItems += Number(store.outdatedItems || 0)
+      target.presenceItems += Number(store.presenceItems || 0)
+      target.ruptureItems += Number(store.ruptureItems || 0)
+      target.recoveredItems += Number(store.recoveredItems || 0)
     }
   }
 
   return Object.values(totals)
-    .filter((store) => store.totalSku > 0 || store.pendingItems > 0 || store.updatedItems > 0 || store.outdatedItems > 0)
+    .filter((store) => store.totalSku > 0 || store.pendingItems > 0 || store.updatedItems > 0 || store.outdatedItems > 0 || store.cancellationCount > 0)
     .map((store) => ({
       ...store,
       ...summarizeStores([store], storeCodes.value),
     }))
 })
+
+const chartStoreRows = computed(() => filteredStoreRows.value.filter((store) => Number(store.totalSku || 0) > 0))
 
 const regionalSummary = computed(() => summarizeStores(filteredStoreRows.value, storeCodes.value))
 
@@ -89,6 +125,11 @@ const rankedStores = computed(() => {
     readPct: Number(store.readPct || 0),
     pendingPct: Number(store.pendingPct || 0),
     accuracyPct: Number(store.accuracyPct || 0),
+    presencePct: Number(store.presencePct || 0),
+    rupturePct: Number(store.rupturePct || 0),
+    recoveryPct: Number(store.recoveryPct || 0),
+    recoveredItems: Number(store.recoveredItems || 0),
+    cancellationCount: Number(store.cancellationCount || 0),
   }))
 
   if (sortMode.value === 'pending') {
@@ -98,30 +139,16 @@ const rankedStores = computed(() => {
     return [...base].sort((a, b) => b.readPct - a.readPct)
   }
   if (sortMode.value === 'accuracy') {
-    return [...base].sort((a, b) => b.accuracyPct - a.accuracyPct)
+    return [...base].sort((a, b) => {
+      const valueA = selectedAuditType.value === 'Ruptura' ? a.recoveryPct : a.accuracyPct
+      const valueB = selectedAuditType.value === 'Ruptura' ? b.recoveryPct : b.accuracyPct
+      return valueB - valueA
+    })
+  }
+  if (sortMode.value === 'cancellations') {
+    return [...base].sort((a, b) => b.cancellationCount - a.cancellationCount)
   }
   return [...base].sort((a, b) => a.code.localeCompare(b.code))
-})
-
-const comparisonRows = computed(() => {
-  const regional = {
-    code: 'Regional',
-    pendingPct: Number(regionalSummary.value.pendingPct || 0),
-    readPct: Number(regionalSummary.value.readPct || 0),
-    accuracyPct: Number(regionalSummary.value.accuracyPct || 0),
-    isRegional: true,
-  }
-
-  const rows = rankedStores.value.map((store) => ({
-    ...store,
-    displayName: formatStoreLabel(store.code, store.name, region.value.name),
-    isRegional: false,
-  }))
-
-  return [{
-    ...regional,
-    displayName: formatStoreLabel('Regional', '', region.value.name),
-  }, ...rows]
 })
 
 const chartPalette = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#fb7185', '#f97316', '#6366f1']
@@ -220,18 +247,6 @@ function getAreaPath(points) {
 }
 
 const hoveredTrendIndex = ref(null)
-const hoveredComparisonCode = ref(null)
-const comparisonScale = computed(() => {
-  const values = comparisonRows.value.map((row) => Number(row.pendingPct || 0))
-  return Math.max(10, Math.ceil(Math.max(metaThreshold, ...values) / 5) * 5)
-})
-const comparisonMetaPosition = computed(() => {
-  return Math.min((metaThreshold / comparisonScale.value) * 100, 100)
-})
-
-function getComparisonWidth(value) {
-  return Math.min((Math.max(Number(value || 0), 0) / comparisonScale.value) * 100, 100)
-}
 const currentHoverDate = computed(() => {
   if (hoveredTrendIndex.value === null) return null
   return trendDates.value[hoveredTrendIndex.value] || null
@@ -268,25 +283,11 @@ function clearTrendHover() {
   hoveredTrendIndex.value = null
 }
 
-function setComparisonHover(code) {
-  hoveredComparisonCode.value = code
-}
-
-function clearComparisonHover() {
-  hoveredComparisonCode.value = null
-}
-
 const trendChartCard = ref(null)
-const pendingChartCard = ref(null)
 
 async function exportTrendChart() {
   if (!trendChartCard.value) return
   await exportCardAsPng(trendChartCard.value, 'leitura-ao-longo-do-periodo', { scale: 2.5, bottomPadding: 24 })
-}
-
-async function exportPendingChart() {
-  if (!pendingChartCard.value) return
-  await exportCardAsPng(pendingChartCard.value, 'pendencia-por-loja', { scale: 2.5, bottomPadding: 24 })
 }
 
 const insights = computed(() => {
@@ -347,6 +348,10 @@ const insights = computed(() => {
 })
 
 const auditCount = computed(() => filteredSessions.value.length)
+const cancellationCount = computed(() => filteredSessions.value.reduce(
+  (total, session) => total + (session.stores || []).filter((store) => isCancelledStore(store) && selectedStores.value.includes(store.code)).length,
+  0,
+))
 const selectedStoresLabel = computed(() => selectedStores.value.length === storeCodes.value.length ? 'Todas' : selectedStores.value.join(', '))
 
 function applyQuickPeriod(days) {
@@ -414,6 +419,22 @@ onMounted(async () => {
     </div>
 
     <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="mb-5">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tipo de auditoria</p>
+        <div class="mt-3 inline-flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
+          <button
+            v-for="type in auditTypes"
+            :key="type"
+            type="button"
+            class="rounded-xl px-4 py-2 text-sm font-semibold transition"
+            :class="selectedAuditType === type ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'"
+            @click="selectedAuditType = type"
+          >
+            {{ type }}
+          </button>
+        </div>
+      </div>
+
       <div class="grid gap-4 xl:grid-cols-[1.2fr_1.2fr_1fr]">
         <label class="space-y-2">
           <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data inicial</span>
@@ -480,24 +501,28 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-4">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
       <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Auditorias</p>
         <p class="mt-3 text-3xl font-bold text-slate-900">{{ auditCount }}</p>
       </div>
       <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Leitura regional</p>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.read }}</p>
         <p class="mt-3 text-3xl font-bold text-slate-900">{{ regionalSummary.readPct.toFixed(2) }}%</p>
       </div>
       <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Pendência</p>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.pending }}</p>
         <p class="mt-3 text-3xl font-bold" :class="regionalSummary.pendingPct <= metaThreshold ? 'text-emerald-600' : regionalSummary.pendingPct <= 7 ? 'text-amber-600' : 'text-rose-600'">
           {{ regionalSummary.pendingPct.toFixed(2) }}%
         </p>
       </div>
       <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Acertabilidade</p>
-        <p class="mt-3 text-3xl font-bold text-slate-900">{{ regionalSummary.accuracyPct.toFixed(2) }}%</p>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.accuracy }}</p>
+        <p class="mt-3 text-3xl font-bold text-slate-900">{{ (selectedAuditType === 'Ruptura' ? regionalSummary.recoveryPct : selectedAuditType === 'Presença' ? regionalSummary.presencePct : regionalSummary.accuracyPct).toFixed(2) }}%</p>
+      </div>
+      <div class="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600">Cancelamentos</p>
+        <p class="mt-3 text-3xl font-bold text-rose-700">{{ cancellationCount }}</p>
       </div>
     </div>
 
@@ -534,7 +559,7 @@ onMounted(async () => {
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Evolução</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">Leitura ao longo do período</h2>
+          <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ reportLabels.read }} ao longo do período</h2>
         </div>
         <div class="flex items-center gap-2">
           <button
@@ -641,77 +666,34 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div ref="pendingChartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Comparativo</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">Pendência por loja</h2>
-        </div>
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
-            data-export-control
-            class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
-            @click="exportPendingChart"
-          >
-            <i class="fa-solid fa-download"></i>
-            Salvar imagem
-          </button>
-          <label class="text-sm font-medium text-slate-700">Ordenar</label>
-          <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
-            <option value="pending">Pendência</option>
-            <option value="read">Leitura</option>
-            <option value="accuracy">Acertabilidade</option>
-            <option value="name">Loja</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="space-y-4">
-        <div
-          v-for="row in comparisonRows"
-          :key="row.code"
-          class="chart-line"
-          :class="{ 'chart-line-regional': row.isRegional }"
-          @mouseenter="setComparisonHover(row.code)"
-          @mouseleave="clearComparisonHover()"
-        >
-          <div class="chart-meta">
-            <span>{{ row.displayName }}</span>
-            <strong>{{ Number(row.pendingPct || 0).toFixed(2) }}%</strong>
-          </div>
-
-          <div class="chart-track">
-            <div v-if="hoveredComparisonCode === row.code" class="comparison-tooltip">
-              <div class="comparison-tooltip-header">{{ row.displayName }}</div>
-              <div class="comparison-tooltip-body">
-                <span>Pendência</span>
-                <strong>{{ Number(row.pendingPct || 0).toFixed(2) }}%</strong>
-              </div>
-              <div class="comparison-tooltip-body">
-                <span>Leitura</span>
-                <strong>{{ Number(row.readPct || 0).toFixed(2) }}%</strong>
-              </div>
-              <div class="comparison-tooltip-body">
-                <span>Acertabilidade</span>
-                <strong>{{ Number(row.accuracyPct || 0).toFixed(2) }}%</strong>
-              </div>
-            </div>
-            <div class="chart-meta-line" :style="{ left: `${comparisonMetaPosition}%` }" />
-            <div
-              class="chart-fill"
-              :class="row.isRegional ? 'regional' : row.pendingPct <= metaThreshold ? 'good' : row.pendingPct <= 7 ? 'warning' : 'danger'"
-              :style="{ width: `${getComparisonWidth(row.pendingPct)}%` }"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+    <StoreTowerChart
+      :stores="chartStoreRows"
+      :regional-summary="regionalSummary"
+      :selected-codes="selectedStores"
+      :store-codes="storeCodes"
+      :regional-name="region.name"
+      :metric-title="reportLabels.chart"
+      :primary-label="reportLabels.pending"
+      :secondary-label="reportLabels.secondary"
+      @update:selected-codes="selectedStores = $event"
+    />
 
     <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-4">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Detalhamento</p>
-        <h2 class="mt-2 text-xl font-semibold text-slate-900">Ranking por loja</h2>
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Detalhamento</p>
+          <h2 class="mt-2 text-xl font-semibold text-slate-900">Ranking por loja</h2>
+        </div>
+        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+          Ordenar por
+          <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
+            <option value="pending">{{ reportLabels.pending }}</option>
+            <option value="read">{{ reportLabels.read }}</option>
+            <option value="accuracy">{{ reportLabels.accuracy }}</option>
+            <option value="cancellations">Cancelamentos</option>
+            <option value="name">Loja</option>
+          </select>
+        </label>
       </div>
 
       <div class="overflow-hidden rounded-2xl border border-slate-200">
@@ -720,11 +702,11 @@ onMounted(async () => {
             <tr>
               <th class="px-4 py-3">Loja</th>
               <th class="px-4 py-3">SKU</th>
-              <th class="px-4 py-3">Leitura</th>
-              <th class="px-4 py-3">Pendência</th>
-              <th class="px-4 py-3">Acertabilidade</th>
-              <th class="px-4 py-3">Atualizados</th>
-              <th class="px-4 py-3">Desatualizados</th>
+              <th class="px-4 py-3">{{ reportLabels.read }}</th>
+              <th class="px-4 py-3">{{ reportLabels.pending }}</th>
+              <th class="px-4 py-3">{{ reportLabels.accuracy }}</th>
+              <th class="px-4 py-3">{{ selectedAuditType === 'Etiqueta' ? 'Atualizados' : 'Recuperados' }}</th>
+              <th class="px-4 py-3">Cancelamentos</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-200 bg-white text-sm text-slate-700">
@@ -735,9 +717,9 @@ onMounted(async () => {
               <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
               <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
               <td class="px-4 py-3">{{ row.pendingPct.toFixed(2) }}%</td>
-              <td class="px-4 py-3">{{ row.accuracyPct.toFixed(2) }}%</td>
-              <td class="px-4 py-3">{{ row.updatedItems.toLocaleString('pt-BR') }}</td>
-              <td class="px-4 py-3">{{ row.outdatedItems.toLocaleString('pt-BR') }}</td>
+              <td class="px-4 py-3">{{ (selectedAuditType === 'Ruptura' ? row.recoveryPct : selectedAuditType === 'Presença' ? row.presencePct : row.accuracyPct).toFixed(2) }}%</td>
+              <td class="px-4 py-3">{{ (selectedAuditType === 'Etiqueta' ? row.updatedItems : row.recoveredItems).toLocaleString('pt-BR') }}</td>
+              <td class="px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="row.cancellationCount ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'">{{ row.cancellationCount }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -747,130 +729,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.chart-line {
-  display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  position: relative;
-  overflow: visible;
-}
-
-.chart-line-regional {
-  padding-top: 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.5);
-  margin-top: 8px;
-}
-
-.comparison-tooltip {
-  position: absolute;
-  left: 50%;
-  top: -82px;
-  transform: translateX(-50%);
-  min-width: 180px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.28);
-  z-index: 20;
-  pointer-events: none;
-}
-
-.comparison-tooltip-header {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 8px;
-}
-
-.comparison-tooltip-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.comparison-tooltip-body + .comparison-tooltip-body {
-  margin-top: 6px;
-}
-
-.comparison-tooltip-body strong {
-  color: white;
-  font-weight: 700;
-}
-
-.chart-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 14px;
-  color: #0f172a;
-  min-width: 0;
-}
-
-.chart-meta span {
-  display: inline-block;
-  max-width: 100%;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chart-meta strong {
-  color: #475569;
-}
-
-.chart-track {
-  position: relative;
-  width: 100%;
-  height: 18px;
-  border-radius: 999px;
-  overflow: visible;
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  background: linear-gradient(90deg, #e2e8f0, #f8fafc);
-}
-
-.chart-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  height: 100%;
-  border-radius: 999px;
-}
-
-.chart-fill.good {
-  background: linear-gradient(90deg, #22c55e, #16a34a);
-}
-
-.chart-fill.warning {
-  background: linear-gradient(90deg, #f59e0b, #f97316);
-}
-
-.chart-fill.danger {
-  background: linear-gradient(90deg, #ef4444, #dc2626);
-}
-
-.chart-fill.regional {
-  background: linear-gradient(90deg, #0f172a, #1e293b);
-}
-
-.chart-meta-line {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 3px;
-  border-radius: 999px;
-  background: rgba(34, 197, 94, 0.9);
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
-  z-index: 2;
-}
-
 .store-name-cell {
   display: inline-block;
   max-width: 220px;

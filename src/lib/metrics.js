@@ -166,15 +166,21 @@ export function summarizeStores(storeRows, allowedStoreCodes = STORE_CODES) {
       acc.pendingItems += Number(store.pendingItems || 0)
       acc.updatedItems += Number(store.updatedItems || 0)
       acc.outdatedItems += Number(store.outdatedItems || 0)
+      acc.presenceItems += Number(store.presenceItems || 0)
+      acc.ruptureItems += Number(store.ruptureItems || 0)
+      acc.recoveredItems += Number(store.recoveredItems || 0)
       return acc
     },
-    { totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0 },
+    { totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0, presenceItems: 0, ruptureItems: 0, recoveredItems: 0 },
   )
 
   const readItems = totals.updatedItems + totals.outdatedItems
   const readPct = toPercent(readItems, totals.totalSku)
   const pendingPct = toPercent(totals.pendingItems, totals.totalSku)
   const accuracyPct = readItems > 0 ? Number(((totals.updatedItems / readItems) * 100).toFixed(2)) : 0
+  const presencePct = toPercent(Math.max(totals.totalSku - totals.presenceItems, 0), totals.totalSku)
+  const rupturePct = toPercent(totals.ruptureItems, totals.totalSku)
+  const recoveryPct = toPercent(totals.recoveredItems, totals.presenceItems)
 
   return {
     totalSku: totals.totalSku,
@@ -184,6 +190,12 @@ export function summarizeStores(storeRows, allowedStoreCodes = STORE_CODES) {
     readPct: Number(readPct.toFixed(2)),
     pendingPct: Number(pendingPct.toFixed(2)),
     accuracyPct: Number(accuracyPct.toFixed(2)),
+    presenceItems: totals.presenceItems,
+    ruptureItems: totals.ruptureItems,
+    recoveredItems: totals.recoveredItems,
+    presencePct: Number(presencePct.toFixed(2)),
+    rupturePct: Number(rupturePct.toFixed(2)),
+    recoveryPct: Number(recoveryPct.toFixed(2)),
   }
 }
 

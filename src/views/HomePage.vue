@@ -19,6 +19,7 @@ const weekCursor = ref(new Date())
 const currentWeek = computed(() => getCurrentWeekDays(weekCursor.value))
 const isModalOpen = ref(false)
 const isStoreCancellationModalOpen = ref(false)
+const cancellationDraftCodes = ref([])
 const selectedDay = ref(null)
 const selectedChartCodes = ref([])
 
@@ -41,10 +42,61 @@ const activeSession = computed(() => {
   return sorted[0] || null
 })
 
+const auditType = computed(() => activeSession.value?.auditType || selectedDay.value?.activity || 'Etiqueta')
+
 const summary = computed(() => {
   const stores = activeSession.value?.stores || []
-  return stores.length ? summarizeStores(stores, storeCodes.value) : { totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0, readPct: 0, pendingPct: 0, accuracyPct: 0 }
+  return stores.length ? summarizeStores(stores, storeCodes.value) : {
+    totalSku: 0, pendingItems: 0, updatedItems: 0, outdatedItems: 0, readPct: 0, pendingPct: 0, accuracyPct: 0,
+    presenceItems: 0, ruptureItems: 0, recoveredItems: 0, presencePct: 0, rupturePct: 0, recoveryPct: 0,
+  }
 })
+
+const operationalCards = computed(() => {
+  if (auditType.value === 'Presença') {
+    return [
+      { label: 'Presença', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Itens presentes sobre o SKU', tone: 'blue' },
+      { label: 'Ruptura identificada', value: `${summary.value.pendingPct.toFixed(2)}%`, subtext: 'Itens sem presença', tone: summary.value.pendingPct <= 3 ? 'green' : summary.value.pendingPct <= 7 ? 'orange' : 'red' },
+      { label: 'Itens presentes', value: summary.value.updatedItems.toLocaleString('pt-BR'), subtext: 'SKU com presença confirmada', tone: 'green' },
+      { label: 'Itens em ruptura', value: summary.value.ruptureItems.toLocaleString('pt-BR'), subtext: 'Base para a auditoria de ruptura', tone: 'slate' },
+    ]
+  }
+
+  return [
+    { label: 'Presença após auditoria', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Presença após a verificação', tone: 'blue' },
+    { label: 'Ruptura final', value: `${summary.value.rupturePct.toFixed(2)}%`, subtext: 'Ruptura confirmada no fechamento', tone: summary.value.rupturePct <= 3 ? 'green' : summary.value.rupturePct <= 7 ? 'orange' : 'red' },
+    { label: 'Recuperação', value: `${summary.value.recoveryPct.toFixed(2)}%`, subtext: 'Redução sobre a ruptura inicial', tone: 'green' },
+    { label: 'Itens recuperados', value: summary.value.recoveredItems.toLocaleString('pt-BR'), subtext: 'Diferença entre Presença e Ruptura', tone: 'slate' },
+  ]
+})
+
+const operationalSummaryTiles = computed(() => auditType.value === 'Presença'
+  ? [
+      { label: 'SKU total', value: summary.value.totalSku, icon: 'fa-solid fa-boxes-stacked' },
+      { label: 'Itens presentes', value: summary.value.updatedItems, icon: 'fa-solid fa-circle-check' },
+      { label: 'Ruptura inicial', value: summary.value.presenceItems, icon: 'fa-solid fa-magnifying-glass' },
+      { label: 'Ruptura registrada', value: summary.value.ruptureItems, icon: 'fa-solid fa-triangle-exclamation' },
+    ]
+  : [
+      { label: 'SKU total', value: summary.value.totalSku, icon: 'fa-solid fa-boxes-stacked' },
+      { label: 'Ruptura da presença', value: summary.value.presenceItems, icon: 'fa-solid fa-clock-rotate-left' },
+      { label: 'Ruptura final', value: summary.value.ruptureItems, icon: 'fa-solid fa-triangle-exclamation' },
+      { label: 'Itens recuperados', value: summary.value.recoveredItems, icon: 'fa-solid fa-arrow-trend-down' },
+    ])
+
+const operationalExecution = computed(() => auditType.value === 'Presença'
+  ? [
+      { label: 'Presença', value: summary.value.readPct, color: 'bg-sky-500' },
+      { label: 'Ruptura', value: summary.value.pendingPct, color: 'bg-amber-500' },
+      { label: 'Cobertura', value: summary.value.readPct, color: 'bg-emerald-500' },
+      { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-violet-500' },
+    ]
+  : [
+      { label: 'Presença final', value: summary.value.readPct, color: 'bg-sky-500' },
+      { label: 'Ruptura final', value: summary.value.rupturePct, color: 'bg-amber-500' },
+      { label: 'Recuperação', value: summary.value.recoveryPct, color: 'bg-emerald-500' },
+      { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-violet-500' },
+    ])
 
 const forecast = computed(() => buildForecast(summary.value))
 
@@ -67,6 +119,7 @@ const storeStatusRows = computed(() => {
 })
 
 const cancelledStoreCount = computed(() => storeStatusRows.value.filter((store) => store.isCancelled).length)
+const draftCancelledStoreCount = computed(() => cancellationDraftCodes.value.length)
 
 const normalizeHeader = (value) => String(value ?? '')
   .normalize('NFD')
@@ -117,7 +170,7 @@ async function loadSessions() {
   }
 }
 
-function parseSpreadSheetRows(file) {
+function parseSpreadSheetRows(file, selectedAuditType = 'Etiqueta') {
   const workbook = XLSX.read(file, { type: 'array' })
   const firstSheetName = workbook.SheetNames[0]
   const sheet = workbook.Sheets[firstSheetName]
@@ -157,6 +210,8 @@ function parseSpreadSheetRows(file) {
       const pendingItems = parseNumeric(row[columnMap.pending] ?? row[3])
       const updatedItems = parseNumeric(row[columnMap.updated] ?? row[4])
       const outdatedItems = parseNumeric(row[columnMap.outdated] ?? row[5])
+      const presenceItems = parseNumeric(row[3])
+      const ruptureItems = parseNumeric(row[4])
 
       const codeFromTree = String(treeCell).match(/\b\d{3}\b/)
       const codeFromName = String(nameCell).match(/\b\d{3}\b/)
@@ -169,6 +224,16 @@ function parseSpreadSheetRows(file) {
         return null
       }
 
+      if (selectedAuditType !== 'Etiqueta') {
+        return {
+          code,
+          name: label || undefined,
+          totalSku,
+          presenceItems,
+          ruptureItems: selectedAuditType === 'Presença' ? presenceItems : ruptureItems,
+        }
+      }
+
       return {
         code,
         name: label || undefined,
@@ -179,20 +244,53 @@ function parseSpreadSheetRows(file) {
       }
     })
     .filter(Boolean)
-    .filter((row) => row.totalSku > 0 || row.pendingItems > 0 || row.updatedItems > 0 || row.outdatedItems > 0)
+    .filter((row) => row.totalSku > 0 || row.pendingItems > 0 || row.updatedItems > 0 || row.outdatedItems > 0 || row.presenceItems > 0 || row.ruptureItems > 0)
 }
 
 async function handleUpload(file) {
   if (!selectedDay.value) return
 
-  const rows = filterAllowedStoreRows(parseSpreadSheetRows(await file.arrayBuffer()), storeCodes.value)
+  const selectedAuditType = selectedDay.value.activity || 'Etiqueta'
+  const rows = filterAllowedStoreRows(parseSpreadSheetRows(await file.arrayBuffer(), selectedAuditType), storeCodes.value)
 
   if (!rows.length) {
-    window.alert('Nenhuma loja foi identificada. Verifique se a planilha contém os campos: Árvore, Itens com Estoque, Não Lidas com Estoque, Atualizadas com Estoque e Desatualizadas.')
+    const expectedColumns = selectedAuditType === 'Etiqueta'
+      ? 'Árvore, Itens com Estoque, Não Lidas com Estoque, Atualizadas com Estoque e Desatualizadas.'
+      : 'Árvore, Auditado em, Itens com Estoque, Ruptura 1ª e Ruptura Final.'
+    window.alert(`Nenhuma loja foi identificada. Verifique se a planilha contém os campos: ${expectedColumns}`)
     return
   }
 
   const normalizedStores = rows.map((row) => {
+    if (selectedAuditType !== 'Etiqueta') {
+      const totalSku = Math.max(Number(row.totalSku || 0), 0)
+      const presenceItems = Math.min(Math.max(Number(row.presenceItems || 0), 0), totalSku)
+      const ruptureItems = Math.min(Math.max(Number(row.ruptureItems || 0), 0), totalSku)
+      const recoveredItems = Math.max(presenceItems - ruptureItems, 0)
+      const presentItems = Math.max(totalSku - ruptureItems, 0)
+      const presencePct = totalSku > 0 ? Number((((totalSku - presenceItems) / totalSku) * 100).toFixed(2)) : 0
+      const rupturePct = totalSku > 0 ? Number(((ruptureItems / totalSku) * 100).toFixed(2)) : 0
+      const recoveryPct = presenceItems > 0 ? Number(((recoveredItems / presenceItems) * 100).toFixed(2)) : 0
+
+      return {
+        code: row.code,
+        name: row.name,
+        totalSku,
+        pendingItems: ruptureItems,
+        updatedItems: presentItems,
+        outdatedItems: 0,
+        readPct: Number((100 - rupturePct).toFixed(2)),
+        pendingPct: rupturePct,
+        accuracyPct: selectedAuditType === 'Ruptura' ? recoveryPct : presencePct,
+        presenceItems,
+        ruptureItems,
+        recoveredItems,
+        presencePct,
+        rupturePct,
+        recoveryPct,
+      }
+    }
+
     const metrics = normalizeStoreMetrics({
       totalSku: row.totalSku,
       pendingItems: row.pendingItems,
@@ -220,6 +318,7 @@ async function handleUpload(file) {
     weekStart: currentWeek.value[0]?.iso,
     dayKey: selectedDay.value.key,
     dayLabel: selectedDay.value.label,
+    auditType: selectedAuditType,
     isoDate: selectedDay.value.iso,
     uploadedAt: new Date().toISOString(),
     sourceFile: file.name,
@@ -228,6 +327,10 @@ async function handleUpload(file) {
     forecast: buildForecast(summarizeStores(normalizedStores, storeCodes.value)),
   }
 
+  const previousSession = sessions.value.find((session) => session.isoDate === selectedDay.value.iso)
+  if (previousSession) {
+    await deleteSession(previousSession.id)
+  }
   await upsertSession(payload)
   isModalOpen.value = false
   await loadSessions()
@@ -246,13 +349,26 @@ function openUpdateForSelectedDay() {
   isModalOpen.value = true
 }
 
-async function toggleStoreCancellation(code, nextValue) {
+function openStoreCancellationModal() {
+  cancellationDraftCodes.value = storeStatusRows.value.filter((store) => store.isCancelled).map((store) => store.code)
+  isStoreCancellationModalOpen.value = true
+}
+
+function toggleCancellationDraft(code) {
+  if (cancellationDraftCodes.value.includes(code)) {
+    cancellationDraftCodes.value = cancellationDraftCodes.value.filter((item) => item !== code)
+    return
+  }
+  cancellationDraftCodes.value = [...cancellationDraftCodes.value, code]
+}
+
+async function saveStoreCancellations() {
   const session = activeSession.value
   if (!session) return
 
   const updatedStores = (session.stores || []).map((store) => {
-    if (store.code !== code) return store
-    const cancelled = Boolean(nextValue)
+    if (!storeCodes.value.includes(store.code)) return store
+    const cancelled = cancellationDraftCodes.value.includes(store.code)
     return {
       ...store,
       cancelled,
@@ -270,6 +386,7 @@ async function toggleStoreCancellation(code, nextValue) {
 
   sessions.value = sessions.value.map((item) => (item.id === updatedSession.id ? updatedSession : item))
   await upsertSession(updatedSession)
+  isStoreCancellationModalOpen.value = false
 }
 
 async function deleteSelectedAudit() {
@@ -356,10 +473,11 @@ onMounted(async () => {
       <div class="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Auditoria ativa</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ selectedSession.dayLabel }} · {{ selectedSession.isoDate }}</h2>
+          <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ selectedSession.dayLabel }} · {{ selectedSession.auditType || selectedDay?.activity || 'Etiqueta' }} · {{ selectedSession.isoDate }}</h2>
         </div>
         <div class="flex gap-2">
-          <button class="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200" @click="openUpdateForSelectedDay">
+          <button class="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 hover:shadow-md" @click="openUpdateForSelectedDay">
+            <i class="fa-solid fa-arrows-rotate"></i>
             Atualizar auditoria
           </button>
           <button class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100" @click="deleteSelectedAudit">
@@ -368,11 +486,21 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div v-if="auditType === 'Etiqueta'" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Leitura total" :value="`${summary.readPct.toFixed(2)}%`" subtext="Itens lidos / total SKU" tone="blue" />
         <MetricCard label="Pendentes" :value="`${summary.pendingPct.toFixed(2)}%`" subtext="Itens ainda não lidos" :tone="summary.pendingPct <= 3 ? 'green' : summary.pendingPct <= 7 ? 'orange' : 'red'" />
         <MetricCard label="Acertabilidade" :value="`${summary.accuracyPct.toFixed(2)}%`" subtext="Atualizados dentre lidos" tone="green" />
         <MetricCard label="Itens lidos" :value="`${(summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR')}`" subtext="Total de itens lidos" tone="slate" />
+      </div>
+      <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          v-for="card in operationalCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :subtext="card.subtext"
+          :tone="card.tone"
+        />
       </div>
 
       <div class="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
@@ -388,7 +516,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="mt-5 grid grid-cols-2 gap-4">
+          <div v-if="auditType === 'Etiqueta'" class="mt-5 grid grid-cols-2 gap-4">
             <div class="rounded-2xl bg-slate-50 p-4">
               <div class="flex items-center gap-2 text-slate-500">
                 <i class="fa-solid fa-boxes-stacked text-sm"></i>
@@ -418,6 +546,15 @@ onMounted(async () => {
               <p class="mt-2 text-2xl font-bold text-slate-900">{{ summary.outdatedItems.toLocaleString('pt-BR') }}</p>
             </div>
           </div>
+          <div v-else class="mt-5 grid grid-cols-2 gap-4">
+            <div v-for="tile in operationalSummaryTiles" :key="tile.label" class="rounded-2xl bg-slate-50 p-4">
+              <div class="flex items-center gap-2 text-slate-500">
+                <i :class="`${tile.icon} text-sm`"></i>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">{{ tile.label }}</p>
+              </div>
+              <p class="mt-2 text-2xl font-bold text-slate-900">{{ Number(tile.value || 0).toLocaleString('pt-BR') }}</p>
+            </div>
+          </div>
         </div>
 
         <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -432,7 +569,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="mt-4 grid grid-cols-2 gap-3">
+          <div v-if="auditType === 'Etiqueta'" class="mt-4 grid grid-cols-2 gap-3">
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Leitura</p>
               <p class="mt-2 text-xl font-bold text-slate-900">{{ summary.readPct.toFixed(2) }}%</p>
@@ -465,6 +602,15 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+          <div v-else class="mt-4 grid grid-cols-2 gap-3">
+            <div v-for="item in operationalExecution" :key="item.label" class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{{ item.label }}</p>
+              <p class="mt-2 text-xl font-bold text-slate-900">{{ item.value === null ? item.count : `${item.value.toFixed(2)}%` }}</p>
+              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                <div class="h-full rounded-full" :class="item.color" :style="{ width: `${item.value === null ? 100 : Math.min(item.value, 100)}%` }" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -472,7 +618,7 @@ onMounted(async () => {
         <button
           type="button"
           class="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-100"
-          @click="isStoreCancellationModalOpen = true"
+          @click="openStoreCancellationModal"
         >
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
@@ -496,6 +642,9 @@ onMounted(async () => {
         :selected-codes="selectedChartCodes"
         :store-codes="storeCodes"
         :regional-name="region.name"
+        :metric-title="auditType === 'Etiqueta' ? '% pendente por loja e regional' : '% de ruptura por loja e regional'"
+        :primary-label="auditType === 'Etiqueta' ? 'Pendência' : 'Ruptura'"
+        :secondary-label="auditType === 'Ruptura' ? 'Recuperação' : auditType === 'Presença' ? 'Presença' : 'Acertabilidade'"
         @update:selected-codes="selectedChartCodes = $event"
       />
     </div>
@@ -505,7 +654,7 @@ onMounted(async () => {
     </div>
 
     <div v-if="isModalOpen && selectedDay" class="relative">
-      <UploadModal :regional-name="region.name" @close="isModalOpen = false" @upload="handleUpload" />
+      <UploadModal :regional-name="region.name" :audit-type="selectedDay.activity" :is-update="Boolean(selectedSession)" @close="isModalOpen = false" @upload="handleUpload" />
     </div>
 
     <div v-if="isStoreCancellationModalOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
@@ -513,7 +662,8 @@ onMounted(async () => {
         <div class="flex items-start justify-between gap-4">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
-            <h3 class="mt-2 text-2xl font-semibold text-slate-900">Cancelar loja na auditoria</h3>
+            <h3 class="mt-2 text-2xl font-semibold text-slate-900">Selecionar lojas canceladas</h3>
+            <p class="mt-2 text-sm text-slate-500">Marque todas as lojas que devem ficar fora do resultado e confirme ao final.</p>
           </div>
           <button type="button" class="text-lg text-slate-500 hover:text-slate-900" @click="isStoreCancellationModalOpen = false">×</button>
         </div>
@@ -523,34 +673,40 @@ onMounted(async () => {
             v-for="store in storeStatusRows"
             :key="store.code"
             class="flex min-h-[112px] flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4"
-            :class="store.isCancelled ? 'border-rose-200 bg-rose-50' : ''"
+            :class="cancellationDraftCodes.includes(store.code) ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-100' : ''"
           >
             <div>
               <p class="font-semibold text-slate-900">Loja {{ store.code }}</p>
               <p class="mt-1 text-xs text-slate-500">
-                {{ store.isCancelled ? 'Cancelada e fora do resultado' : 'Contabilizada no resultado' }}
+                {{ cancellationDraftCodes.includes(store.code) ? 'Será excluída do resultado' : 'Será contabilizada no resultado' }}
               </p>
             </div>
 
             <button
               type="button"
               class="w-full rounded-xl px-3 py-2 text-sm font-medium transition"
-              :class="store.isCancelled ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'"
-              @click="toggleStoreCancellation(store.code, !store.isCancelled); isStoreCancellationModalOpen = false"
+              :class="cancellationDraftCodes.includes(store.code) ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'"
+              @click="toggleCancellationDraft(store.code)"
             >
-              {{ store.isCancelled ? 'Reativar' : 'Cancelar' }}
+              {{ cancellationDraftCodes.includes(store.code) ? 'Manter ativa' : 'Marcar como cancelada' }}
             </button>
           </div>
         </div>
 
-        <div class="mt-6 flex justify-end gap-3">
+        <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <span class="text-sm font-medium text-slate-600">{{ draftCancelledStoreCount }} loja(s) selecionada(s)</span>
+          <div class="flex gap-3">
           <button
             type="button"
             class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
             @click="isStoreCancellationModalOpen = false"
           >
-            Fechar
+            Cancelar
           </button>
+          <button type="button" class="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700" @click="saveStoreCancellations">
+            Aplicar seleção
+          </button>
+          </div>
         </div>
       </div>
     </div>
