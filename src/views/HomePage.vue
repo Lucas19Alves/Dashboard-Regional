@@ -261,7 +261,7 @@ async function handleUpload(file) {
     return
   }
 
-  const normalizedStores = rows.map((row) => {
+  const importedStores = rows.map((row) => {
     if (selectedAuditType !== 'Etiqueta') {
       const totalSku = Math.max(Number(row.totalSku || 0), 0)
       const presenceItems = Math.min(Math.max(Number(row.presenceItems || 0), 0), totalSku)
@@ -311,6 +311,20 @@ async function handleUpload(file) {
     }
   })
 
+  const previousSession = sessions.value.find((session) => session.isoDate === selectedDay.value.iso)
+  const previouslyCancelledCodes = new Set(
+    (previousSession?.stores || []).filter((store) => isCancelledStore(store)).map((store) => store.code),
+  )
+  const normalizedStores = importedStores.map((store) => {
+    if (!previouslyCancelledCodes.has(store.code)) return store
+    return {
+      ...store,
+      cancelled: true,
+      isCancelled: true,
+      status: 'cancelada',
+    }
+  })
+
   const payload = {
     id: `${region.value.id}-${selectedDay.value.iso}-${selectedDay.value.key}`,
     regionId: region.value.id,
@@ -327,7 +341,6 @@ async function handleUpload(file) {
     forecast: buildForecast(summarizeStores(normalizedStores, storeCodes.value)),
   }
 
-  const previousSession = sessions.value.find((session) => session.isoDate === selectedDay.value.iso)
   if (previousSession) {
     await deleteSession(previousSession.id)
   }
