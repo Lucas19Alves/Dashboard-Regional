@@ -1,4 +1,5 @@
 <script setup>
+import PageHeader from '../components/PageHeader.vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { toPng } from 'html-to-image'
 import { listSessions } from '../lib/database'
@@ -259,6 +260,12 @@ const insights = computed(() => {
 })
 
 const auditCount = computed(() => regionalSummary.value.auditCount)
+const headerChips = computed(() => [
+  { label: 'Período', value: startDate.value || endDate.value ? `${formatDateBR(startDate.value)} a ${formatDateBR(endDate.value)}` : 'Todo o histórico' },
+  { label: 'Status', value: STATUS_OPTIONS.find((option) => option.value === selectedStatus.value)?.label || 'Todas' },
+  { label: 'Lojas', value: selectedStores.value.length === storeCodes.value.length ? `Todas (${storeCodes.value.length})` : `${selectedStores.value.length} de ${storeCodes.value.length}` },
+  { label: 'Auditorias', value: `${report.value.sessions.length} (${report.value.statusCounts.fechada} fechadas · ${report.value.statusCounts.aberta} abertas)` },
+])
 const cancellationCount = computed(() => regionalSummary.value.cancellations)
 const selectedStoresLabel = computed(() => selectedStores.value.length === storeCodes.value.length ? 'Todas' : selectedStores.value.join(', '))
 
@@ -396,22 +403,23 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
-    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Relatórios</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-900">Comparativo por período · {{ region.code }}</h1>
-    </div>
+    <PageHeader
+      :eyebrow="`${region.name} · Relatórios`"
+      :title="selectedAuditType === 'Geral' ? 'Visão geral' : `Auditoria de ${selectedAuditType}`"
+      :chips="headerChips"
+    />
 
-    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="ui-card p-5">
       <div class="mb-5 flex flex-wrap gap-6">
        <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tipo de auditoria</p>
-        <div class="mt-3 inline-flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
+        <p class="ui-eyebrow">Tipo de auditoria</p>
+        <div class="mt-3 ui-seg">
           <button
             v-for="type in auditTypes"
             :key="type"
             type="button"
-            class="rounded-xl px-4 py-2 text-sm font-semibold transition"
-            :class="selectedAuditType === type ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'"
+            class="ui-seg-item"
+            :class="{ 'ui-seg-item-active': selectedAuditType === type }"
             @click="selectedAuditType = type"
           >
             {{ type }}
@@ -419,14 +427,14 @@ onMounted(async () => {
         </div>
        </div>
        <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Situação da auditoria</p>
-        <div class="mt-3 inline-flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
+        <p class="ui-eyebrow">Situação da auditoria</p>
+        <div class="mt-3 ui-seg">
           <button
             v-for="option in STATUS_OPTIONS"
             :key="option.value"
             type="button"
-            class="rounded-xl px-4 py-2 text-sm font-semibold transition"
-            :class="selectedStatus === option.value ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'"
+            class="ui-seg-item"
+            :class="{ 'ui-seg-item-active': selectedStatus === option.value }"
             :title="option.value === 'aberta' ? 'Arquivo enviado no próprio dia (parcial)' : option.value === 'fechada' ? 'Arquivo enviado após o dia da auditoria (final)' : ''"
             @click="selectedStatus = option.value"
           >
@@ -438,19 +446,19 @@ onMounted(async () => {
 
       <div class="grid gap-4 xl:grid-cols-[1.2fr_1.2fr_1fr]">
         <label class="space-y-2">
-          <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data inicial</span>
-          <input v-model="startDate" type="date" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200" />
+          <span class="ui-eyebrow">Data inicial</span>
+          <input v-model="startDate" type="date" class="ui-input" />
         </label>
 
         <label class="space-y-2">
-          <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data final</span>
-          <input v-model="endDate" type="date" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200" />
+          <span class="ui-eyebrow">Data final</span>
+          <input v-model="endDate" type="date" class="ui-input" />
         </label>
 
         <div class="space-y-2">
-          <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Ações</span>
+          <span class="ui-eyebrow">Ações</span>
           <div class="flex gap-2">
-            <button class="flex-1 rounded-2xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200" @click="resetPeriod">
+            <button class="ui-btn-secondary flex-1" @click="resetPeriod">
               Reset
             </button>
           </div>
@@ -458,7 +466,7 @@ onMounted(async () => {
       </div>
 
       <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Filtros rápidos</p>
+        <p class="ui-eyebrow">Filtros rápidos</p>
         <div class="mt-3 flex flex-wrap gap-2">
           <button
             v-for="days in quickRanges"
@@ -475,7 +483,7 @@ onMounted(async () => {
       <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
+            <p class="ui-eyebrow">Lojas</p>
             <p class="mt-2 text-sm text-slate-700">{{ selectedStoresLabel }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -503,42 +511,42 @@ onMounted(async () => {
     </div>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Auditorias</p>
-        <p class="mt-3 text-3xl font-bold text-slate-900">{{ auditCount }}</p>
+      <div class="ui-card p-5">
+        <p class="ui-kpi-label">Auditorias</p>
+        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ auditCount }}</p>
       </div>
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.read }}</p>
-        <p class="mt-3 text-3xl font-bold text-slate-900">{{ regionalSummary.readPct.toFixed(2) }}%</p>
+      <div class="ui-card p-5">
+        <p class="ui-kpi-label">{{ reportLabels.read }}</p>
+        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ regionalSummary.readPct.toFixed(2) }}%</p>
       </div>
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.pending }}</p>
-        <p class="mt-3 text-3xl font-bold" :class="regionalSummary.pendingPct <= metaThreshold ? 'text-emerald-600' : regionalSummary.pendingPct <= 7 ? 'text-amber-600' : 'text-rose-600'">
+      <div class="ui-card p-5">
+        <p class="ui-kpi-label">{{ reportLabels.pending }}</p>
+        <p class="mt-2 text-[34px] font-black leading-none tracking-tight" :class="regionalSummary.pendingPct <= metaThreshold ? 'text-emerald-600' : regionalSummary.pendingPct <= 7 ? 'text-amber-600' : 'text-rose-600'">
           {{ regionalSummary.pendingPct.toFixed(2) }}%
         </p>
       </div>
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.accuracy }}</p>
-        <p class="mt-3 text-3xl font-bold text-slate-900">{{ regionalSummary.thirdPct.toFixed(2) }}%</p>
+      <div class="ui-card p-5">
+        <p class="ui-kpi-label">{{ reportLabels.accuracy }}</p>
+        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ regionalSummary.thirdPct.toFixed(2) }}%</p>
       </div>
-      <div class="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600">Cancelamentos</p>
-        <p class="mt-3 text-3xl font-bold text-rose-700">{{ cancellationCount }}</p>
+      <div class="ui-card-alert p-5">
+        <p class="ui-kpi-label !text-rose-600">Cancelamentos</p>
+        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-rose-700">{{ cancellationCount }}</p>
       </div>
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="ui-card p-5">
         <div class="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Comparativo</p>
-            <h2 class="mt-2 text-xl font-semibold text-slate-900">Mês anterior</h2>
+            <p class="ui-eyebrow">Comparativo</p>
+            <h2 class="ui-title">Mês anterior</h2>
           </div>
           <p class="text-xs font-medium text-slate-500">{{ comparison.rangeLabel }}</p>
         </div>
         <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
           <table class="min-w-full text-left text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <thead class="ui-table-head">
               <tr>
                 <th class="px-4 py-2.5">Indicador</th>
                 <th class="px-4 py-2.5 text-right">Atual</th>
@@ -558,16 +566,16 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Exportar</p>
-        <h2 class="mt-2 text-xl font-semibold text-slate-900">Imagens em alta resolução</h2>
+      <div class="ui-card p-5">
+        <p class="ui-eyebrow">Exportar</p>
+        <h2 class="ui-title">Imagens em alta resolução</h2>
         <p class="mt-1 text-sm text-slate-500">3840×2160 (16:9) com cards, colunas por loja, evolução, comparativo, ranking e filtros aplicados.</p>
         <div class="mt-4 grid grid-cols-2 gap-2">
           <button
             v-for="type in auditTypes"
             :key="type"
             type="button"
-            class="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+            class="ui-btn-soft py-2.5"
             :disabled="Boolean(exportingType)"
             @click="exportSnapshot(type)"
           >
@@ -577,7 +585,7 @@ onMounted(async () => {
         </div>
         <button
           type="button"
-          class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
+          class="ui-btn-primary mt-2 w-full"
           :disabled="Boolean(exportingType)"
           @click="exportAllSnapshots"
         >
@@ -587,11 +595,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="ui-card p-5">
       <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Insights</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">O que está acontecendo</h2>
+          <p class="ui-eyebrow">Insights</p>
+          <h2 class="ui-title">O que está acontecendo</h2>
         </div>
         <div class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
           Seleção ativa: {{ selectedStoresLabel || 'Nenhuma loja' }}
@@ -610,23 +618,23 @@ onMounted(async () => {
             'border-slate-200 bg-slate-50': insight.tone === 'neutral',
           }"
         >
-          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ insight.title }}</p>
+          <p class="ui-kpi-label">{{ insight.title }}</p>
           <p class="mt-3 text-sm leading-6 text-slate-700">{{ insight.body }}</p>
         </div>
       </div>
     </div>
 
-    <div ref="trendChartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div ref="trendChartCard" class="ui-card p-5">
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Evolução</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ reportLabels.read }} ao longo do período</h2>
+          <p class="ui-eyebrow">Evolução</p>
+          <h2 class="ui-title">{{ reportLabels.read }} ao longo do período</h2>
         </div>
         <div class="flex items-center gap-2">
           <button
             type="button"
             data-export-control
-            class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+            class="ui-btn-soft text-xs"
             @click="exportTrendChart"
           >
             <i class="fa-solid fa-download"></i>
@@ -739,15 +747,15 @@ onMounted(async () => {
       @update:selected-codes="selectedStores = $event"
     />
 
-    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="ui-card p-5">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Detalhamento</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">Ranking por loja</h2>
+          <p class="ui-eyebrow">Detalhamento</p>
+          <h2 class="ui-title">Ranking por loja</h2>
         </div>
         <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
           Ordenar por
-          <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
+          <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
             <option value="pending">{{ reportLabels.pending }}</option>
             <option value="read">{{ reportLabels.read }}</option>
             <option value="accuracy">{{ reportLabels.accuracy }}</option>
@@ -759,7 +767,7 @@ onMounted(async () => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200">
         <table class="min-w-full divide-y divide-slate-200 text-left">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <thead class="ui-table-head">
             <tr>
               <th class="px-4 py-3">Loja</th>
               <th class="px-4 py-3">SKU</th>
