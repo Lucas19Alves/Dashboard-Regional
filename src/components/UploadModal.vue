@@ -36,11 +36,11 @@ function submitUpload() {
 
 <template>
   <div class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-    <div class="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div class="w-full max-w-lg ui-modal">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Consolidado</p>
-          <h3 class="mt-2 text-2xl font-semibold text-slate-900">{{ isUpdate ? 'Atualizar auditoria' : 'Enviar planilha' }}</h3>
+          <p class="ui-eyebrow">Consolidado</p>
+          <h3 class="ui-title">{{ isUpdate ? 'Atualizar auditoria' : 'Enviar planilha' }}</h3>
           <p v-if="isUpdate" class="mt-2 text-sm text-slate-500">A planilha atual será substituída integralmente.</p>
         </div>
         <button class="text-lg text-slate-500 hover:text-slate-900" @click="emit('close')">×</button>
@@ -71,11 +71,11 @@ function submitUpload() {
       </div>
 
       <div class="mt-6 flex justify-end gap-3">
-        <button class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200" @click="emit('close')">
+        <button class="ui-btn-secondary" @click="emit('close')">
           Cancelar
         </button>
         <button
-          class="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          class="ui-btn-primary"
           :disabled="!selectedFile"
           @click="submitUpload"
         >

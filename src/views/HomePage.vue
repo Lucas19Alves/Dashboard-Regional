@@ -1,4 +1,5 @@
 <script setup>
+import PageHeader from '../components/PageHeader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import UploadModal from '../components/UploadModal.vue'
 import WeekCalendar from '../components/WeekCalendar.vue'
@@ -448,26 +449,18 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
-    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Auditorias</p>
-          <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">{{ region.name }}</h1>
-          <p class="mt-2 text-sm text-slate-600">
-            {{ storeCodes.length ? `Acompanhamento consolidado de ${storeCodes.length} lojas: ${storeCodes.join(', ')}.` : 'A estrutura está pronta para receber a lista de lojas desta regional.' }}
-          </p>
-        </div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          {{ sessions.length }} auditoria(s) criada(s)
-        </div>
-      </div>
-    </div>
+    <PageHeader
+      :eyebrow="`${region.name} · Auditorias`"
+      title="Calendário de auditorias"
+      :description="storeCodes.length ? `Acompanhamento consolidado de ${storeCodes.length} lojas: ${storeCodes.join(', ')}.` : 'A estrutura está pronta para receber a lista de lojas desta regional.'"
+      :chips="[{ label: 'Lojas', value: storeCodes.length }, { label: 'Auditorias', value: sessions.length }, ...(selectedSession ? [{ label: 'Ativa', value: `${selectedSession.auditType || 'Etiqueta'} · ${selectedSession.isoDate.split('-').reverse().join('/')}` }] : [])]"
+    />
 
     <div v-if="!storeCodes.length" class="setup-empty-state">
       <div class="setup-empty-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">Configuração preparada</p>
-        <h2 class="mt-2 text-2xl font-bold text-slate-900">SP4 aguardando a definição das lojas</h2>
+        <h2 class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">SP4 aguardando a definição das lojas</h2>
         <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Assim que os códigos forem informados, a regional passará a usar o mesmo fluxo completo da SP6, com calendário, importação, indicadores, gráficos, relatórios e backup próprios.</p>
       </div>
     </div>
@@ -483,17 +476,17 @@ onMounted(async () => {
     />
 
     <div v-if="selectedSession" class="space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3 ui-card p-5">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Auditoria ativa</p>
-          <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ selectedSession.dayLabel }} · {{ selectedSession.auditType || selectedDay?.activity || 'Etiqueta' }} · {{ selectedSession.isoDate }}</h2>
+          <p class="ui-eyebrow">Auditoria ativa</p>
+          <h2 class="ui-title">{{ selectedSession.dayLabel }} · {{ selectedSession.auditType || selectedDay?.activity || 'Etiqueta' }} · {{ selectedSession.isoDate.split('-').reverse().join('/') }}</h2>
         </div>
         <div class="flex gap-2">
-          <button class="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 hover:shadow-md" @click="openUpdateForSelectedDay">
+          <button class="ui-btn-primary" @click="openUpdateForSelectedDay">
             <i class="fa-solid fa-arrows-rotate"></i>
             Atualizar auditoria
           </button>
-          <button class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100" @click="deleteSelectedAudit">
+          <button class="ui-btn-danger" @click="deleteSelectedAudit">
             Excluir auditoria
           </button>
         </div>
@@ -517,11 +510,11 @@ onMounted(async () => {
       </div>
 
       <div class="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="ui-card p-5">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Resumo</p>
-              <h2 class="mt-2 text-xl font-semibold text-slate-900">{{ selectedSession.dayLabel }}</h2>
+              <p class="ui-eyebrow">Resumo</p>
+              <h2 class="ui-title">{{ selectedSession.dayLabel }}</h2>
             </div>
             <div class="flex items-center gap-2 text-sm text-slate-600">
               <span class="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -530,86 +523,86 @@ onMounted(async () => {
           </div>
 
           <div v-if="auditType === 'Etiqueta'" class="mt-5 grid grid-cols-2 gap-4">
-            <div class="rounded-2xl bg-slate-50 p-4">
+            <div class="ui-tile">
               <div class="flex items-center gap-2 text-slate-500">
                 <i class="fa-solid fa-boxes-stacked text-sm"></i>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">SKU total</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.16em]">SKU total</p>
               </div>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ summary.totalSku.toLocaleString('pt-BR') }}</p>
+              <p class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">{{ summary.totalSku.toLocaleString('pt-BR') }}</p>
             </div>
-            <div class="rounded-2xl bg-slate-50 p-4">
+            <div class="ui-tile">
               <div class="flex items-center gap-2 text-slate-500">
                 <i class="fa-solid fa-book-open-reader text-sm"></i>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">Itens lidos</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.16em]">Itens lidos</p>
               </div>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ (summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR') }}</p>
+              <p class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">{{ (summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR') }}</p>
             </div>
-            <div class="rounded-2xl bg-slate-50 p-4">
+            <div class="ui-tile">
               <div class="flex items-center gap-2 text-slate-500">
                 <i class="fa-solid fa-circle-check text-sm"></i>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">Atualizados</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.16em]">Atualizados</p>
               </div>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ summary.updatedItems.toLocaleString('pt-BR') }}</p>
+              <p class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">{{ summary.updatedItems.toLocaleString('pt-BR') }}</p>
             </div>
-            <div class="rounded-2xl bg-slate-50 p-4">
+            <div class="ui-tile">
               <div class="flex items-center gap-2 text-slate-500">
                 <i class="fa-solid fa-clock-rotate-left text-sm"></i>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">Desatualizados</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.16em]">Desatualizados</p>
               </div>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ summary.outdatedItems.toLocaleString('pt-BR') }}</p>
+              <p class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">{{ summary.outdatedItems.toLocaleString('pt-BR') }}</p>
             </div>
           </div>
           <div v-else class="mt-5 grid grid-cols-2 gap-4">
-            <div v-for="tile in operationalSummaryTiles" :key="tile.label" class="rounded-2xl bg-slate-50 p-4">
+            <div v-for="tile in operationalSummaryTiles" :key="tile.label" class="ui-tile">
               <div class="flex items-center gap-2 text-slate-500">
                 <i :class="`${tile.icon} text-sm`"></i>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em]">{{ tile.label }}</p>
+                <p class="text-[11px] font-bold uppercase tracking-[0.16em]">{{ tile.label }}</p>
               </div>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ Number(tile.value || 0).toLocaleString('pt-BR') }}</p>
+              <p class="mt-2 text-[28px] font-black leading-none tracking-tight text-slate-900">{{ Number(tile.value || 0).toLocaleString('pt-BR') }}</p>
             </div>
           </div>
         </div>
 
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="ui-card p-5">
           <div class="mb-5 flex items-start justify-between gap-3">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Execução</p>
-              <h3 class="mt-2 text-xl font-semibold text-slate-900">Performance da semana</h3>
+              <p class="ui-eyebrow">Execução</p>
+              <h3 class="ui-title">Performance da semana</h3>
             </div>
             <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
-              <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Lojas</div>
+              <div class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Lojas</div>
               <div class="mt-1 text-2xl font-bold tracking-tight text-slate-900">{{ storeCodes.length }}</div>
             </div>
           </div>
 
           <div v-if="auditType === 'Etiqueta'" class="mt-4 grid grid-cols-2 gap-3">
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Leitura</p>
-              <p class="mt-2 text-xl font-bold text-slate-900">{{ summary.readPct.toFixed(2) }}%</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Leitura</p>
+              <p class="mt-2 text-2xl font-black leading-none tracking-tight text-slate-900">{{ summary.readPct.toFixed(2) }}%</p>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                 <div class="h-full rounded-full bg-sky-500" :style="{ width: `${Math.min(summary.readPct, 100)}%` }" />
               </div>
             </div>
 
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Acertabilidade</p>
-              <p class="mt-2 text-xl font-bold text-slate-900">{{ summary.accuracyPct.toFixed(2) }}%</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Acertabilidade</p>
+              <p class="mt-2 text-2xl font-black leading-none tracking-tight text-slate-900">{{ summary.accuracyPct.toFixed(2) }}%</p>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                 <div class="h-full rounded-full bg-violet-500" :style="{ width: `${Math.min(summary.accuracyPct, 100)}%` }" />
               </div>
             </div>
 
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Pendência</p>
-              <p class="mt-2 text-xl font-bold text-slate-900">{{ summary.pendingPct.toFixed(2) }}%</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Pendência</p>
+              <p class="mt-2 text-2xl font-black leading-none tracking-tight text-slate-900">{{ summary.pendingPct.toFixed(2) }}%</p>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                 <div class="h-full rounded-full bg-amber-500" :style="{ width: `${Math.min(summary.pendingPct, 100)}%` }" />
               </div>
             </div>
 
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Lidos</p>
-              <p class="mt-2 text-xl font-bold text-slate-900">{{ (summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR') }}</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Lidos</p>
+              <p class="mt-2 text-2xl font-black leading-none tracking-tight text-slate-900">{{ (summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR') }}</p>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                 <div class="h-full rounded-full bg-emerald-500" :style="{ width: `${Math.min(summary.readPct, 100)}%` }" />
               </div>
@@ -617,8 +610,8 @@ onMounted(async () => {
           </div>
           <div v-else class="mt-4 grid grid-cols-2 gap-3">
             <div v-for="item in operationalExecution" :key="item.label" class="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{{ item.label }}</p>
-              <p class="mt-2 text-xl font-bold text-slate-900">{{ item.value === null ? item.count : `${item.value.toFixed(2)}%` }}</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{{ item.label }}</p>
+              <p class="mt-2 text-2xl font-black leading-none tracking-tight text-slate-900">{{ item.value === null ? item.count : `${item.value.toFixed(2)}%` }}</p>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                 <div class="h-full rounded-full" :class="item.color" :style="{ width: `${item.value === null ? 100 : Math.min(item.value, 100)}%` }" />
               </div>
@@ -627,15 +620,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="ui-card p-5">
         <button
           type="button"
           class="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-100"
           @click="openStoreCancellationModal"
         >
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
-            <h3 class="mt-2 text-xl font-semibold text-slate-900">Cancelar auditoria de lojas</h3>
+            <p class="ui-eyebrow">Lojas</p>
+            <h3 class="ui-title">Cancelar auditoria de lojas</h3>
           </div>
 
           <div class="flex items-center gap-3">
@@ -671,11 +664,11 @@ onMounted(async () => {
     </div>
 
     <div v-if="isStoreCancellationModalOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-      <div class="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <div class="w-full max-w-2xl ui-modal">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Lojas</p>
-            <h3 class="mt-2 text-2xl font-semibold text-slate-900">Selecionar lojas canceladas</h3>
+            <p class="ui-eyebrow">Lojas</p>
+            <h3 class="ui-title">Selecionar lojas canceladas</h3>
             <p class="mt-2 text-sm text-slate-500">Marque todas as lojas que devem ficar fora do resultado e confirme ao final.</p>
           </div>
           <button type="button" class="text-lg text-slate-500 hover:text-slate-900" @click="isStoreCancellationModalOpen = false">×</button>
@@ -711,12 +704,12 @@ onMounted(async () => {
           <div class="flex gap-3">
           <button
             type="button"
-            class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+            class="ui-btn-secondary"
             @click="isStoreCancellationModalOpen = false"
           >
             Cancelar
           </button>
-          <button type="button" class="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700" @click="saveStoreCancellations">
+          <button type="button" class="ui-btn-primary" @click="saveStoreCancellations">
             Aplicar seleção
           </button>
           </div>

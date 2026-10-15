@@ -156,25 +156,25 @@ async function exportChart() {
 </script>
 
 <template>
-  <div ref="chartCard" class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div ref="chartCard" class="ui-card p-5">
     <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Indicador principal</p>
-        <h3 class="mt-2 text-xl font-semibold text-slate-900">{{ metricTitle }}</h3>
+        <p class="ui-eyebrow">Indicador principal</p>
+        <h3 class="ui-title">{{ metricTitle }}</h3>
       </div>
 
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
         <button
           type="button"
           data-export-control
-          class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+          class="ui-btn-soft text-xs"
           @click="exportChart"
         >
           <i class="fa-solid fa-download"></i>
           Salvar imagem
         </button>
         <label class="text-sm font-medium text-slate-700">Ordenar</label>
-        <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
+        <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
           <option value="pending">Pendência</option>
           <option value="read">{{ primaryLabel === 'Pendência' ? 'Leitura' : 'Presença final' }}</option>
           <option value="accuracy">{{ secondaryLabel }}</option>

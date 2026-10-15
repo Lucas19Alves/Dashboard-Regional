@@ -130,7 +130,7 @@ onMounted(async () => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200">
         <table class="min-w-full divide-y divide-slate-200 text-left">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <thead class="ui-table-head">
             <tr>
               <th class="px-4 py-3">Loja</th>
               <th class="px-4 py-3">SKU</th>
