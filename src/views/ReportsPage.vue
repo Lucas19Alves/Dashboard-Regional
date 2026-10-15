@@ -1,8 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { toPng } from 'html-to-image'
 import { listSessions } from '../lib/database'
 import { summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
 import { exportCardAsPng } from '../lib/exportImage'
+import { REPORT_TYPES, STATUS_OPTIONS, buildReport, formatDateBR } from '../lib/reportData'
+import ReportSnapshot from '../components/ReportSnapshot.vue'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
@@ -17,29 +20,10 @@ const endDate = ref('')
 const selectedStores = ref([])
 const sortMode = ref('pending')
 const selectedAuditType = ref('Etiqueta')
-const auditTypes = ['Etiqueta', 'Presença', 'Ruptura']
+const selectedStatus = ref('todas')
+const auditTypes = REPORT_TYPES
 const metaThreshold = 3
 const quickRanges = [7, 15, 30, 60]
-
-function getSessionAuditType(session) {
-  if (session.auditType) return session.auditType
-  if (session.dayKey === 'tuesday') return 'Presença'
-  if (session.dayKey === 'wednesday') return 'Ruptura'
-  return 'Etiqueta'
-}
-
-const reportLabels = computed(() => {
-  if (selectedAuditType.value === 'Etiqueta') {
-    return { read: 'Leitura regional', pending: 'Pendência', accuracy: 'Acertabilidade', chart: 'Pendência por loja e regional', secondary: 'Acertabilidade' }
-  }
-  return {
-    read: 'Presença final',
-    pending: 'Ruptura final',
-    accuracy: selectedAuditType.value === 'Ruptura' ? 'Recuperação' : 'Presença inicial',
-    chart: 'Ruptura por loja e regional',
-    secondary: selectedAuditType.value === 'Ruptura' ? 'Recuperação' : 'Presença',
-  }
-})
 
 function toIsoDateLocal(date) {
   const year = date.getFullYear()
@@ -56,100 +40,27 @@ const allDateValues = computed(() => {
   return values
 })
 
-const filteredSessions = computed(() => {
-  return [...(sessions.value || [])]
-    .filter((session) => {
-      if (getSessionAuditType(session) !== selectedAuditType.value) return false
-      if (!session.isoDate) return true
-      if (startDate.value && session.isoDate < startDate.value) return false
-      if (endDate.value && session.isoDate > endDate.value) return false
-      return true
-    })
-    .sort((a, b) => new Date(a.isoDate || a.uploadedAt) - new Date(b.isoDate || b.uploadedAt))
-})
+function reportFor(type) {
+  return buildReport({
+    sessions: sessions.value,
+    type,
+    startDate: startDate.value,
+    endDate: endDate.value,
+    status: selectedStatus.value,
+    selectedStores: selectedStores.value,
+    storeCodes: storeCodes.value,
+    regionName: region.value.name,
+    sortMode: sortMode.value,
+  })
+}
 
-const filteredStoreRows = computed(() => {
-  const totals = Object.fromEntries(storeCodes.value.map((code) => [code, {
-    code,
-    name: '',
-    totalSku: 0,
-    pendingItems: 0,
-    updatedItems: 0,
-    outdatedItems: 0,
-    presenceItems: 0,
-    ruptureItems: 0,
-    recoveredItems: 0,
-    cancellationCount: 0,
-  }]))
-
-  for (const session of filteredSessions.value) {
-    for (const store of session.stores || []) {
-      if (!selectedStores.value.includes(store.code)) continue
-      const target = totals[store.code]
-      if (!target) continue
-      if (isCancelledStore(store)) {
-        target.cancellationCount += 1
-        continue
-      }
-      if (!target.name && store.name) target.name = store.name
-      target.totalSku += Number(store.totalSku || 0)
-      target.pendingItems += Number(store.pendingItems || 0)
-      target.updatedItems += Number(store.updatedItems || 0)
-      target.outdatedItems += Number(store.outdatedItems || 0)
-      target.presenceItems += Number(store.presenceItems || 0)
-      target.ruptureItems += Number(store.ruptureItems || 0)
-      target.recoveredItems += Number(store.recoveredItems || 0)
-    }
-  }
-
-  return Object.values(totals)
-    .filter((store) => store.totalSku > 0 || store.pendingItems > 0 || store.updatedItems > 0 || store.outdatedItems > 0 || store.cancellationCount > 0)
-    .map((store) => ({
-      ...store,
-      ...summarizeStores([store], storeCodes.value),
-    }))
-})
-
-const chartStoreRows = computed(() => filteredStoreRows.value.filter((store) => Number(store.totalSku || 0) > 0))
-
-const regionalSummary = computed(() => summarizeStores(filteredStoreRows.value, storeCodes.value))
-
-const rankedStores = computed(() => {
-  const base = [...filteredStoreRows.value].map((store) => ({
-    code: store.code,
-    name: store.name,
-    totalSku: Number(store.totalSku || 0),
-    pendingItems: Number(store.pendingItems || 0),
-    updatedItems: Number(store.updatedItems || 0),
-    outdatedItems: Number(store.outdatedItems || 0),
-    readPct: Number(store.readPct || 0),
-    pendingPct: Number(store.pendingPct || 0),
-    accuracyPct: Number(store.accuracyPct || 0),
-    presencePct: Number(store.presencePct || 0),
-    rupturePct: Number(store.rupturePct || 0),
-    recoveryPct: Number(store.recoveryPct || 0),
-    recoveredItems: Number(store.recoveredItems || 0),
-    cancellationCount: Number(store.cancellationCount || 0),
-  }))
-
-  if (sortMode.value === 'pending') {
-    return [...base].sort((a, b) => a.pendingPct - b.pendingPct)
-  }
-  if (sortMode.value === 'read') {
-    return [...base].sort((a, b) => b.readPct - a.readPct)
-  }
-  if (sortMode.value === 'accuracy') {
-    return [...base].sort((a, b) => {
-      const valueA = selectedAuditType.value === 'Ruptura' ? a.recoveryPct : a.accuracyPct
-      const valueB = selectedAuditType.value === 'Ruptura' ? b.recoveryPct : b.accuracyPct
-      return valueB - valueA
-    })
-  }
-  if (sortMode.value === 'cancellations') {
-    return [...base].sort((a, b) => b.cancellationCount - a.cancellationCount)
-  }
-  return [...base].sort((a, b) => a.code.localeCompare(b.code))
-})
+const report = computed(() => reportFor(selectedAuditType.value))
+const reportLabels = computed(() => report.value.labels)
+const filteredSessions = computed(() => report.value.sessions)
+const chartStoreRows = computed(() => report.value.chartRows)
+const regionalSummary = computed(() => report.value.totals)
+const rankedStores = computed(() => report.value.ranking)
+const comparison = computed(() => report.value.previous)
 
 const chartPalette = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#fb7185', '#f97316', '#6366f1']
 
@@ -347,12 +258,84 @@ const insights = computed(() => {
   ]
 })
 
-const auditCount = computed(() => filteredSessions.value.length)
-const cancellationCount = computed(() => filteredSessions.value.reduce(
-  (total, session) => total + (session.stores || []).filter((store) => isCancelledStore(store) && selectedStores.value.includes(store.code)).length,
-  0,
-))
+const auditCount = computed(() => regionalSummary.value.auditCount)
+const cancellationCount = computed(() => regionalSummary.value.cancellations)
 const selectedStoresLabel = computed(() => selectedStores.value.length === storeCodes.value.length ? 'Todas' : selectedStores.value.join(', '))
+
+function formatMetric(value, format) {
+  return format === 'pct' ? `${Number(value || 0).toFixed(2)}%` : Number(value || 0).toLocaleString('pt-BR')
+}
+
+function deltaClass(metric) {
+  if (!metric.hasPrevious || metric.delta === 0 || metric.better === 'neutral') return 'text-slate-500'
+  const improved = metric.better === 'up' ? metric.delta > 0 : metric.delta < 0
+  return improved ? 'text-emerald-600' : 'text-rose-600'
+}
+
+function formatDelta(metric) {
+  if (!metric.hasPrevious) return '—'
+  const sign = metric.delta > 0 ? '+' : ''
+  return metric.format === 'pct' ? `${sign}${metric.delta.toFixed(2)} p.p.` : `${sign}${metric.delta.toLocaleString('pt-BR')}`
+}
+
+// ---------- Imagens em alta resolução (1920×1080, exportadas em 2x = 3840×2160) ----------
+const snapshotType = ref(null)
+const snapshotRef = ref(null)
+const exportingType = ref(null)
+const snapshotReport = computed(() => (snapshotType.value ? reportFor(snapshotType.value) : null))
+const statusLabel = computed(() => STATUS_OPTIONS.find((option) => option.value === selectedStatus.value)?.label || 'Todas')
+const sortLabel = computed(() => ({ pending: reportLabels.value.pending, read: reportLabels.value.read, accuracy: reportLabels.value.accuracy, cancellations: 'Cancelamentos', name: 'Loja' })[sortMode.value])
+const generatedAt = ref('')
+const snapshotFilters = computed(() => [
+  { label: 'Período', value: startDate.value || endDate.value ? `${formatDateBR(startDate.value)} a ${formatDateBR(endDate.value)}` : 'Todo o histórico' },
+  { label: 'Tipo', value: snapshotType.value || selectedAuditType.value },
+  { label: 'Status', value: statusLabel.value },
+  { label: 'Lojas', value: selectedStores.value.length === storeCodes.value.length ? `Todas (${storeCodes.value.length})` : `${selectedStores.value.length} de ${storeCodes.value.length}` },
+  { label: 'Auditorias', value: `${snapshotReport.value?.sessions.length ?? 0} (${snapshotReport.value?.statusCounts.fechada ?? 0} fechadas · ${snapshotReport.value?.statusCounts.aberta ?? 0} abertas)` },
+])
+
+function slug(value) {
+  return String(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+async function exportSnapshot(type) {
+  exportingType.value = type
+  generatedAt.value = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  snapshotType.value = type
+  try {
+    await nextTick()
+    if (document.fonts?.ready) await document.fonts.ready
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const node = snapshotRef.value?.$el
+    if (!node) return
+    let url = ''
+    // Navegadores com limite de canvas menor caem para escalas menores.
+    for (const pixelRatio of [2, 1.5, 1]) {
+      try {
+        url = await toPng(node, { pixelRatio, width: 1920, height: 1080, backgroundColor: '#f1f5f9', cacheBust: true })
+      } catch {
+        url = ''
+      }
+      if (url.length > 100) break
+    }
+    if (!url) return
+    const period = startDate.value || endDate.value ? `${startDate.value || 'inicio'}-a-${endDate.value || 'fim'}` : 'historico'
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `relatorio-${slug(region.value.code)}-${slug(type)}-${period}.png`
+    link.click()
+  } finally {
+    snapshotType.value = null
+    exportingType.value = null
+  }
+}
+
+async function exportAllSnapshots() {
+  for (const type of auditTypes) {
+    await exportSnapshot(type)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+  }
+}
 
 function applyQuickPeriod(days) {
   if (!allDateValues.value.length) {
@@ -419,7 +402,8 @@ onMounted(async () => {
     </div>
 
     <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-5">
+      <div class="mb-5 flex flex-wrap gap-6">
+       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tipo de auditoria</p>
         <div class="mt-3 inline-flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
           <button
@@ -433,6 +417,23 @@ onMounted(async () => {
             {{ type }}
           </button>
         </div>
+       </div>
+       <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Situação da auditoria</p>
+        <div class="mt-3 inline-flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1.5">
+          <button
+            v-for="option in STATUS_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="rounded-xl px-4 py-2 text-sm font-semibold transition"
+            :class="selectedStatus === option.value ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'"
+            :title="option.value === 'aberta' ? 'Arquivo enviado no próprio dia (parcial)' : option.value === 'fechada' ? 'Arquivo enviado após o dia da auditoria (final)' : ''"
+            @click="selectedStatus = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+       </div>
       </div>
 
       <div class="grid gap-4 xl:grid-cols-[1.2fr_1.2fr_1fr]">
@@ -518,11 +519,71 @@ onMounted(async () => {
       </div>
       <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{{ reportLabels.accuracy }}</p>
-        <p class="mt-3 text-3xl font-bold text-slate-900">{{ (selectedAuditType === 'Ruptura' ? regionalSummary.recoveryPct : selectedAuditType === 'Presença' ? regionalSummary.presencePct : regionalSummary.accuracyPct).toFixed(2) }}%</p>
+        <p class="mt-3 text-3xl font-bold text-slate-900">{{ regionalSummary.thirdPct.toFixed(2) }}%</p>
       </div>
       <div class="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600">Cancelamentos</p>
         <p class="mt-3 text-3xl font-bold text-rose-700">{{ cancellationCount }}</p>
+      </div>
+    </div>
+
+    <div class="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Comparativo</p>
+            <h2 class="mt-2 text-xl font-semibold text-slate-900">Mês anterior</h2>
+          </div>
+          <p class="text-xs font-medium text-slate-500">{{ comparison.rangeLabel }}</p>
+        </div>
+        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+          <table class="min-w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <tr>
+                <th class="px-4 py-2.5">Indicador</th>
+                <th class="px-4 py-2.5 text-right">Atual</th>
+                <th class="px-4 py-2.5 text-right">Mês anterior</th>
+                <th class="px-4 py-2.5 text-right">Variação</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="metric in comparison.metrics" :key="metric.key">
+                <td class="px-4 py-2.5 font-medium text-slate-700">{{ metric.label }}</td>
+                <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatMetric(metric.current, metric.format) }}</td>
+                <td class="px-4 py-2.5 text-right text-slate-600">{{ metric.hasPrevious ? formatMetric(metric.previous, metric.format) : '—' }}</td>
+                <td class="px-4 py-2.5 text-right font-semibold" :class="deltaClass(metric)">{{ formatDelta(metric) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Exportar</p>
+        <h2 class="mt-2 text-xl font-semibold text-slate-900">Imagens em alta resolução</h2>
+        <p class="mt-1 text-sm text-slate-500">3840×2160 (16:9) com cards, colunas por loja, evolução, comparativo, ranking e filtros aplicados.</p>
+        <div class="mt-4 grid grid-cols-2 gap-2">
+          <button
+            v-for="type in auditTypes"
+            :key="type"
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+            :disabled="Boolean(exportingType)"
+            @click="exportSnapshot(type)"
+          >
+            <i :class="exportingType === type ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-image'"></i>
+            {{ type }}
+          </button>
+        </div>
+        <button
+          type="button"
+          class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
+          :disabled="Boolean(exportingType)"
+          @click="exportAllSnapshots"
+        >
+          <i class="fa-solid fa-download"></i>
+          Baixar as 4 imagens
+        </button>
       </div>
     </div>
 
@@ -705,25 +766,40 @@ onMounted(async () => {
               <th class="px-4 py-3">{{ reportLabels.read }}</th>
               <th class="px-4 py-3">{{ reportLabels.pending }}</th>
               <th class="px-4 py-3">{{ reportLabels.accuracy }}</th>
-              <th class="px-4 py-3">{{ selectedAuditType === 'Etiqueta' ? 'Atualizados' : 'Recuperados' }}</th>
+              <th class="px-4 py-3">{{ reportLabels.moved }}</th>
               <th class="px-4 py-3">Cancelamentos</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-200 bg-white text-sm text-slate-700">
-            <tr v-for="row in rankedStores" :key="row.code">
+            <tr v-for="row in rankedStores" :key="row.code" :class="row.hasData ? '' : 'bg-slate-50'">
               <td class="px-4 py-3 font-semibold text-slate-900">
-                <span class="store-name-cell">{{ formatStoreLabel(row.code, row.name, region.name) }}</span>
+                <span class="store-name-cell" :title="row.name">{{ row.displayName }}</span>
               </td>
-              <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
-              <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
-              <td class="px-4 py-3">{{ row.pendingPct.toFixed(2) }}%</td>
-              <td class="px-4 py-3">{{ (selectedAuditType === 'Ruptura' ? row.recoveryPct : selectedAuditType === 'Presença' ? row.presencePct : row.accuracyPct).toFixed(2) }}%</td>
-              <td class="px-4 py-3">{{ (selectedAuditType === 'Etiqueta' ? row.updatedItems : row.recoveredItems).toLocaleString('pt-BR') }}</td>
+              <template v-if="row.hasData">
+                <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
+                <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
+                <td class="px-4 py-3">{{ row.pendingPct.toFixed(2) }}%</td>
+                <td class="px-4 py-3">{{ row.thirdPct.toFixed(2) }}%</td>
+                <td class="px-4 py-3">{{ row.movedItems.toLocaleString('pt-BR') }}</td>
+              </template>
+              <td v-else colspan="5" class="px-4 py-3 text-center text-xs font-medium italic text-slate-400">Sem auditoria válida no período</td>
               <td class="px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="row.cancellationCount ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'">{{ row.cancellationCount }}</span></td>
             </tr>
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- Painel da imagem (fora da tela, só durante a exportação) -->
+    <div v-if="snapshotReport" class="pointer-events-none fixed top-0" style="left: -100000px" aria-hidden="true">
+      <ReportSnapshot
+        ref="snapshotRef"
+        :report="snapshotReport"
+        :region-name="region.name"
+        :region-code="region.code"
+        :filters="snapshotFilters"
+        :generated-at="generatedAt"
+      />
     </div>
   </div>
 </template>
