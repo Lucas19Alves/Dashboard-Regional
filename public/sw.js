@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auditorias-regionais-v1'
+const CACHE_NAME = 'auditorias-regionais-v2'
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg']
 
 self.addEventListener('install', (event) => {
@@ -17,9 +17,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return
 
+  // Navegação (atualizar a página em qualquer rota): sempre entrega o app.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => (response.ok ? response : fetch('/index.html')))
+        .catch(async () => (await caches.match('/index.html')) || Response.error()),
+    )
+    return
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
+        if (!response.ok) return response
         const copy = response.clone()
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
         return response
