@@ -8,7 +8,7 @@ export const STATUS_OPTIONS = [
   { value: 'aberta', label: 'Abertas' },
   { value: 'fechada', label: 'Fechadas' },
 ]
-export const CHART_PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#fb7185', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#a855f7']
+export const CHART_PALETTE = ['#2F6FB3', '#7A4FB0', '#0F8B8D', '#C25E9E', '#4E7D2E', '#B5651D', '#5B6CC9', '#8C6D1F', '#2A9DBA', '#A1465B', '#3F8F6B', '#6E5A9E', '#D07A3A']
 
 export function getSessionAuditType(session) {
   if (session?.auditType) return session.auditType
@@ -252,7 +252,7 @@ export function buildReport({ sessions = [], type = 'Etiqueta', startDate = '', 
       startDate: previousStart,
       endDate: previousEnd,
       auditCount: previousSessions.length,
-      rangeLabel: previousStart ? `${formatDateBR(previousStart)} a ${formatDateBR(previousEnd)} · ${previousSessions.length} auditoria${previousSessions.length === 1 ? '' : 's'}` : 'Sem período definido',
+      rangeLabel: previousStart ? `${formatDateBR(previousStart)} a ${formatDateBR(previousEnd)}, ${previousSessions.length} auditoria${previousSessions.length === 1 ? '' : 's'}` : 'Sem período definido',
       metrics,
     },
     trend: { dates: trendDates, regional: regionalTrend, stores: storeTrend },

@@ -3,21 +3,19 @@ export default {
   content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      boxShadow: {
-        adwaita: '0 10px 30px rgba(26, 28, 30, 0.12)',
+      fontFamily: {
+        sans: ['Barlow', 'system-ui', 'sans-serif'],
+        display: ['"Barlow Condensed"', 'Barlow', 'system-ui', 'sans-serif'],
       },
       colors: {
-        adwaita: {
-          bg: '#f6f5f4',
-          panel: '#ffffff',
-          border: '#d0d0d0',
-          text: '#1d1d1d',
-          muted: '#5e5c64',
-          blue: '#3584e4',
-          green: '#2ec27e',
-          orange: '#ff7800',
-          red: '#e01b24',
-        },
+        ink: '#1B2430',
+        steel: '#5B6573',
+        line: { DEFAULT: '#D9DDE2', strong: '#C3C9D0' },
+        floor: '#ECEEF1',
+        tag: { DEFAULT: '#FFD60A', soft: '#FFF4B8', deep: '#E0B800' },
+        good: '#18864B',
+        warn: '#B86E00',
+        bad: '#C8233A',
       },
     },
   },

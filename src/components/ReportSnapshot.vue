@@ -99,7 +99,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
     <!-- Cabeçalho + filtros aplicados -->
     <header class="snap-header">
       <div class="title-block">
-        <p class="eyebrow">{{ regionName }} · Relatório de auditorias</p>
+        <p class="eyebrow">{{ regionName }}, relatório de auditorias</p>
         <h1>{{ report.type === 'Geral' ? 'Visão geral' : `Auditoria de ${report.type}` }}</h1>
       </div>
       <div class="filters">
@@ -125,7 +125,6 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
         <section class="card bars-card">
           <div class="card-head">
             <div>
-              <p class="eyebrow">Indicador principal · parciais por loja</p>
               <h2>{{ labels.chart }}</h2>
             </div>
             <div class="legend">
@@ -164,7 +163,6 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
           <section class="card trend-card">
             <div class="card-head">
               <div>
-                <p class="eyebrow">Evolução</p>
                 <h2>{{ labels.read }} ao longo do período</h2>
               </div>
               <div class="legend"><span><i class="dot dot-regional"></i>Regional</span><span class="muted">linhas finas: lojas</span></div>
@@ -172,20 +170,20 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
             <p v-if="!dates.length" class="empty">Sem auditorias no período.</p>
             <svg v-else :viewBox="`0 0 ${LW} ${LH}`" class="trend-svg">
               <g v-for="tick in [0, 25, 50, 75, 100]" :key="tick">
-                <line :x1="PAD.left" :x2="LW - PAD.right" :y1="yAt(tick)" :y2="yAt(tick)" :stroke="tick === 0 ? '#cbd5e1' : '#e2e8f0'" stroke-width="1" :stroke-dasharray="tick === 0 ? '' : '4 5'" />
-                <text :x="PAD.left - 8" :y="yAt(tick) + 4" text-anchor="end" fill="#64748b" font-size="12" font-weight="600">{{ tick }}%</text>
+                <line :x1="PAD.left" :x2="LW - PAD.right" :y1="yAt(tick)" :y2="yAt(tick)" :stroke="tick === 0 ? '#C3C9D0' : '#D9DDE2'" stroke-width="1" :stroke-dasharray="tick === 0 ? '' : '4 5'" />
+                <text :x="PAD.left - 8" :y="yAt(tick) + 4" text-anchor="end" fill="#5B6573" font-size="12" font-weight="600">{{ tick }}%</text>
               </g>
               <path v-for="series in storeLines" :key="series.code" :d="series.path" fill="none" :stroke="series.color" stroke-width="1.6" stroke-opacity="0.55" stroke-linecap="round" stroke-linejoin="round" />
-              <path :d="regionalPath" fill="none" stroke="#0f172a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+              <path :d="regionalPath" fill="none" stroke="#1B2430" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
               <g v-for="(point, index) in report.trend.regional" :key="`p-${index}`">
                 <template v-if="point">
-                  <circle :cx="xAt(index)" :cy="yAt(point.readPct)" r="4.5" fill="#0f172a" stroke="#fff" stroke-width="2" />
-                  <text v-if="dates.length <= 16" :x="xAt(index)" :y="yAt(point.readPct) - 10" text-anchor="middle" fill="#0f172a" font-size="12" font-weight="800">{{ point.readPct.toFixed(1) }}%</text>
+                  <circle :cx="xAt(index)" :cy="yAt(point.readPct)" r="4.5" fill="#1B2430" stroke="#fff" stroke-width="2" />
+                  <text v-if="dates.length <= 16" :x="xAt(index)" :y="yAt(point.readPct) - 10" text-anchor="middle" fill="#1B2430" font-size="12" font-weight="800">{{ point.readPct.toFixed(1) }}%</text>
                 </template>
               </g>
               <g v-for="(date, index) in dates" :key="`d-${index}`">
-                <text v-if="index % labelStep === 0 || index === dates.length - 1" :x="xAt(index)" :y="LH - PAD.bottom + 18" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">{{ date.label }}</text>
-                <text v-if="report.type === 'Geral' && (index % labelStep === 0 || index === dates.length - 1)" :x="xAt(index)" :y="LH - PAD.bottom + 33" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="700">{{ typeInitial(date.type) }}</text>
+                <text v-if="index % labelStep === 0 || index === dates.length - 1" :x="xAt(index)" :y="LH - PAD.bottom + 18" text-anchor="middle" fill="#1B2430" font-size="12" font-weight="700">{{ date.label }}</text>
+                <text v-if="report.type === 'Geral' && (index % labelStep === 0 || index === dates.length - 1)" :x="xAt(index)" :y="LH - PAD.bottom + 33" text-anchor="middle" fill="#5B6573" font-size="10" font-weight="700">{{ typeInitial(date.type) }}</text>
               </g>
             </svg>
             <div class="store-legend">
@@ -197,8 +195,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
           <section class="card compare-card">
             <div class="card-head">
               <div>
-                <p class="eyebrow">Comparativo</p>
-                <h2>Mês anterior</h2>
+                <h2>Comparado ao mês anterior</h2>
               </div>
             </div>
             <p class="compare-range">{{ report.previous.rangeLabel }}</p>
@@ -223,10 +220,9 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
       <section class="card ranking-card">
         <div class="card-head">
           <div>
-            <p class="eyebrow">Detalhamento</p>
             <h2>Ranking por loja</h2>
           </div>
-          <span class="muted small">{{ report.ranking.filter((row) => row.hasData).length }} com auditoria · {{ report.ranking.filter((row) => !row.hasData).length }} sem</span>
+          <span class="muted small">{{ report.ranking.filter((row) => row.hasData).length }} com auditoria, {{ report.ranking.filter((row) => !row.hasData).length }} sem</span>
         </div>
         <table class="ranking-table">
           <thead>
@@ -255,7 +251,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
             </tr>
           </tbody>
         </table>
-        <p class="footnote">Gerado em {{ generatedAt }} · meta de pendência {{ meta }}%</p>
+        <p class="footnote">Gerado em {{ generatedAt }}. Meta de pendência: {{ meta }}%.</p>
       </section>
     </div>
   </div>
@@ -268,102 +264,103 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
   flex-direction: column;
   gap: 18px;
   padding: 32px 36px;
-  background: #f1f5f9;
-  color: #0f172a;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
+  background: #ECEEF1;
+  color: #1B2430;
+  font-family: 'Barlow', 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 .snapshot * { box-sizing: border-box; }
-.eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #64748b; }
-.muted { color: #94a3b8; }
+.eyebrow { margin: 0; font-size: 15px; font-weight: 600; color: #5B6573; }
+.muted { color: #5B6573; }
 .small { font-size: 13px; font-weight: 600; }
-.tone-good { color: #059669; }
-.tone-warn { color: #d97706; }
-.tone-bad { color: #e11d48; }
-.tone-neutral { color: #64748b; }
+.tone-good { color: #18864B; }
+.tone-warn { color: #B86E00; }
+.tone-bad { color: #C8233A; }
+.tone-neutral { color: #5B6573; }
 
 .snap-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; height: 76px; }
-.title-block h1 { margin: 4px 0 0; font-size: 38px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.05; }
+.title-block h1 { margin: 2px 0 0; font-family: 'Barlow Condensed', sans-serif; font-size: 46px; font-weight: 600; line-height: 1; }
 .filters { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 1180px; }
-.filter-chip { display: flex; flex-direction: column; padding: 7px 14px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; }
-.filter-chip span { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #64748b; }
-.filter-chip strong { font-size: 15px; font-weight: 800; color: #0f172a; white-space: nowrap; }
+.filter-chip { display: flex; flex-direction: column; padding: 2px 16px 2px 12px; border-left: 1px solid #C3C9D0; }
+.filter-chip span { font-size: 12px; font-weight: 500; color: #5B6573; }
+.filter-chip strong { font-family: 'Barlow Condensed', sans-serif; font-size: 19px; font-weight: 600; color: #1B2430; white-space: nowrap; }
 
 .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; height: 120px; }
-.kpi { display: flex; flex-direction: column; justify-content: center; padding: 0 24px; border: 1px solid #e2e8f0; border-radius: 22px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05); }
-.kpi-alert { border-color: #fecdd3; background: #fff1f2; }
-.kpi-label { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #64748b; }
-.kpi-alert .kpi-label { color: #e11d48; }
-.kpi-value { margin: 4px 0 2px; font-size: 44px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; }
-.kpi-delta { margin: 0; font-size: 14px; font-weight: 700; }
+.kpi { display: flex; flex-direction: column; justify-content: center; padding: 0 24px; border: 1px solid #D9DDE2; border-radius: 10px; background: #fff; }
+.kpi-alert { box-shadow: inset 4px 0 0 #C8233A; }
+.kpi-label { margin: 0; font-size: 15px; font-weight: 500; color: #5B6573; }
+
+.kpi-value { margin: 2px 0 2px; font-family: 'Barlow Condensed', sans-serif; font-size: 50px; font-weight: 600; line-height: 1; }
+.kpi-delta { margin: 0; font-size: 14px; font-weight: 600; }
 
 .body { display: grid; grid-template-columns: 1fr 780px; gap: 18px; flex: 1; min-height: 0; }
 .left { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
 .bottom-row { display: grid; grid-template-columns: 1fr 380px; gap: 18px; height: 380px; }
-.card { display: flex; flex-direction: column; min-height: 0; padding: 18px 22px; border: 1px solid #e2e8f0; border-radius: 22px; background: #fff; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05); }
+.card { display: flex; flex-direction: column; min-height: 0; padding: 18px 22px; border: 1px solid #D9DDE2; border-radius: 10px; background: #fff; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.card-head h2 { margin: 2px 0 0; font-size: 22px; font-weight: 800; }
-.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 13px; font-weight: 700; color: #475569; }
+.card-head h2 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 600; line-height: 1.1; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 13px; font-weight: 700; color: #5B6573; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-.dot-good { background: #10b981; }
-.dot-warn { background: #f59e0b; }
-.dot-bad { background: #ef4444; }
-.dot-regional { background: #0f172a; }
-.empty { margin: auto; font-size: 18px; color: #64748b; }
+.dot-good { background: #18864B; }
+.dot-warn { background: #E39A1F; }
+.dot-bad { background: #C8233A; }
+.dot-regional { background: #1B2430; }
+.empty { margin: auto; font-size: 18px; color: #5B6573; }
 
 /* Colunas */
 .bars-card { flex: 1; }
 .bars-layout { display: grid; grid-template-columns: 46px 1fr; flex: 1; min-height: 0; margin-top: 14px; padding-bottom: 46px; }
-.y-axis { position: relative; color: #94a3b8; font-size: 12px; font-weight: 700; }
+.y-axis { position: relative; color: #5B6573; font-size: 12px; font-weight: 700; }
 .y-axis span { position: absolute; right: 10px; transform: translateY(50%); }
-.plot { position: relative; border-bottom: 1px solid #cbd5e1; }
-.grid-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #e2e8f0; }
-.target-line { position: absolute; left: 0; right: 0; z-index: 3; border-top: 2px dashed #059669; }
-.target-line span { position: absolute; top: -22px; left: 6px; padding: 1px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 12px; font-weight: 800; }
+.plot { position: relative; border-bottom: 1px solid #C3C9D0; }
+.grid-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #D9DDE2; }
+.target-line { position: absolute; left: 0; right: 0; z-index: 3; border-top: 2px solid #1B2430; }
+.target-line span { position: absolute; top: -22px; left: 6px; padding: 1px 8px; border-radius: 3px; background: #FFD60A; color: #1B2430; font-size: 13px; font-weight: 700; }
 .bars { position: absolute; inset: 0; display: grid; gap: 10px; }
 .bar-col { position: relative; display: flex; flex-direction: column; }
-.bar-col-regional { margin-left: 6px; padding-left: 12px; border-left: 1px solid #cbd5e1; }
+.bar-col-regional { margin-left: 6px; padding-left: 12px; border-left: 1px solid #C3C9D0; }
 .bar-stage { position: relative; flex: 1; }
-.bar-fill { position: absolute; right: 14%; bottom: 0; left: 14%; min-height: 2px; border-radius: 8px 8px 2px 2px; }
-.bar-value { position: absolute; left: 50%; z-index: 4; transform: translateX(-50%); font-size: 17px; font-weight: 800; color: #334155; white-space: nowrap; }
-.bar-good { background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); }
-.bar-warning { background: linear-gradient(180deg, #f59e0b 0%, #f97316 100%); }
-.bar-danger { background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%); }
-.bar-regional { background: linear-gradient(180deg, #334155 0%, #0f172a 100%); }
+.bar-fill { position: absolute; right: 14%; bottom: 0; left: 14%; min-height: 2px; border-radius: 3px 3px 0 0; }
+.bar-value { position: absolute; left: 50%; z-index: 4; transform: translateX(-50%); font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 600; color: #1B2430; white-space: nowrap; }
+.bar-good { background: #18864B; }
+.bar-warning { background: #E39A1F; }
+.bar-danger { background: #C8233A; }
+.bar-regional { background: #1B2430; }
 .bar-label { position: absolute; top: 100%; left: 0; right: 0; padding-top: 8px; text-align: center; line-height: 1.1; }
-.bar-label strong { display: block; font-size: 15px; }
-.bar-label span { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; }
+.bar-label strong { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 600; }
+.bar-label span { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: #5B6573; }
 
 /* Evolução */
 .trend-svg { width: 100%; flex: 1; min-height: 0; margin-top: 6px; }
-.store-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; font-weight: 700; color: #475569; }
+.store-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; font-weight: 700; color: #5B6573; }
 .store-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .store-legend .dot { width: 8px; height: 8px; }
 
 /* Comparativo */
-.compare-range { margin: 4px 0 8px; font-size: 13px; font-weight: 600; color: #64748b; }
+.compare-range { margin: 4px 0 8px; font-size: 13px; font-weight: 600; color: #5B6573; }
 .compare-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.compare-table th { padding: 6px 4px; border-bottom: 1px solid #e2e8f0; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-align: right; text-transform: uppercase; color: #64748b; }
+.compare-table th { padding: 6px 4px; border-bottom: 1px solid #D9DDE2; font-size: 13px; font-weight: 600; text-align: right; color: #5B6573; }
 .compare-table th:first-child { text-align: left; }
-.compare-table td { padding: 9px 4px; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #334155; }
+.compare-table td { padding: 9px 4px; border-bottom: 1px solid #ECEEF1; font-weight: 600; color: #1B2430; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .strong { font-weight: 800 !important; }
 
 /* Ranking */
 .ranking-table { width: 100%; margin-top: 12px; border-collapse: collapse; table-layout: fixed; font-size: 15px; }
-.ranking-table th { padding: 8px 6px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; line-height: 1.2; text-align: left; text-transform: uppercase; color: #64748b; }
+.ranking-table th { padding: 8px 6px; border-bottom: 1px solid #C3C9D0; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: left; color: #5B6573; }
 .ranking-table th.num { text-align: right; }
-.ranking-table td { padding: 0 6px; border-bottom: 1px solid #f1f5f9; color: #334155; }
-.ranking-table .store { overflow: hidden; font-weight: 800; color: #0f172a; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-table td { padding: 0 6px; border-bottom: 1px solid #ECEEF1; color: #1B2430; }
+.ranking-table .store { overflow: hidden; font-weight: 800; color: #1B2430; text-overflow: ellipsis; white-space: nowrap; }
 .pos { width: 44px; }
 .col-store { width: 250px; }
 .col-canc { width: 64px; }
-.pos-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 9px; background: #f1f5f9; font-size: 13px; font-weight: 800; color: #64748b; }
-.pos-top { background: #0ea5e9; color: #fff; }
-.row-empty { background: #f8fafc; }
-.row-empty .store { color: #64748b; }
-.no-audit { font-size: 13px; font-style: italic; font-weight: 600; text-align: center; color: #94a3b8; }
-.canc { display: inline-block; min-width: 28px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; font-size: 13px; font-weight: 800; text-align: center; color: #64748b; }
-.canc-on { background: #ffe4e6; color: #be123c; }
-.footnote { margin: auto 0 0; padding-top: 8px; font-size: 12px; font-weight: 600; color: #94a3b8; }
+.pos-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 3px; background: #ECEEF1; font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 600; color: #5B6573; }
+.pos-top { background: #FFD60A; color: #1B2430; }
+.row-empty { background: transparent; }
+.row-empty .store { color: #5B6573; }
+.no-audit { font-size: 13px; font-style: italic; font-weight: 600; text-align: center; color: #5B6573; }
+.canc { display: inline-block; min-width: 28px; padding: 2px 8px; border-radius: 3px; background: #ECEEF1; font-size: 13px; font-weight: 700; text-align: center; color: #5B6573; }
+.canc-on { background: rgba(200, 35, 58, 0.1); color: #C8233A; }
+.footnote { margin: auto 0 0; padding-top: 8px; font-size: 12px; font-weight: 600; color: #5B6573; }
 </style>
