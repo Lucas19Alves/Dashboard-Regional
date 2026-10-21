@@ -140,7 +140,7 @@ async function importAll() {
               <p class="truncate text-[15px] font-semibold text-ink" :title="row.item.file.name">{{ row.item.file.name }}</p>
               <p v-if="row.problem" class="text-[13px] font-medium text-bad">{{ row.problem }}</p>
               <p v-else class="text-[13px] text-steel">
-                {{ row.day.activity }} de {{ row.day.label.toLowerCase() }}, {{ row.parsed.length }} {{ row.parsed.length === 1 ? 'loja' : 'lojas' }}<template v-if="row.existing">. Substitui a planilha já salva nesse dia</template>
+                {{ row.day.activity }} de {{ row.day.label.toLowerCase() }}, {{ row.parsed.length }} {{ row.parsed.length === 1 ? 'loja' : 'lojas' }}<template v-if="row.existing">. Atualiza os dados já salvos nesse dia</template>
               </p>
             </div>
             <label class="flex items-center gap-2">

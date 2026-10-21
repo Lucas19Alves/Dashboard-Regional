@@ -23,7 +23,7 @@ const startDate = ref('')
 const endDate = ref('')
 const selectedStores = ref([])
 const sortMode = ref('pending')
-const selectedAuditType = ref('Etiqueta')
+const selectedAuditType = ref('Geral')
 const selectedStatus = ref('todas')
 const auditTypes = REPORT_TYPES
 const metaThreshold = computed(() => settings.meta)
@@ -786,6 +786,7 @@ onMounted(async () => {
       :metric-title="reportLabels.chart"
       :primary-label="reportLabels.pending"
       :secondary-label="reportLabels.secondary"
+      :export-context="`${selectedAuditType === 'Geral' ? 'visão geral' : selectedAuditType}, ${startDate || endDate ? `${formatDateBR(startDate)} a ${formatDateBR(endDate)}` : 'todo o histórico'}`"
       @update:selected-codes="selectedStores = $event"
     />
 

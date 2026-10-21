@@ -1,7 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { toPng } from 'html-to-image'
 import { STORE_CODES, formatStoreLabel, isCancelledStore } from '../lib/metrics'
-import { exportCardAsPng } from '../lib/exportImage'
 import { formatLimit, getAttention, settings } from '../lib/settings'
 
 const props = defineProps({
@@ -36,6 +36,11 @@ const props = defineProps({
   secondaryLabel: {
     type: String,
     default: 'Acertabilidade',
+  },
+  // Linha de contexto da imagem salva (ex.: "Ruptura de quarta, 07/10/2026").
+  exportContext: {
+    type: String,
+    default: '',
   },
 })
 
@@ -151,9 +156,44 @@ function getSecondaryValue(row) {
 
 const chartCard = ref(null)
 
+// ---------- Imagem salva: moldura própria de 1600×900, sempre clara e com todas as colunas ----------
+const EXPORT_W = 1600
+const EXPORT_H = 900
+const exportFrame = ref(null)
+const isExporting = ref(false)
+const generatedAt = ref('')
+const regionalShort = computed(() => props.regionalName.replace(/^Regional\s+/i, '') || 'Regional')
+
+function slug(value) {
+  return String(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
 async function exportChart() {
-  if (!chartCard.value) return
-  await exportCardAsPng(chartCard.value, 'pendencia-por-loja-e-regional', { scale: 2.5 })
+  if (isExporting.value || !chartRows.value.length) return
+  isExporting.value = true
+  generatedAt.value = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  try {
+    await nextTick()
+    if (document.fonts?.ready) await document.fonts.ready
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    if (!exportFrame.value) return
+    let url = ''
+    for (const pixelRatio of [2, 1.5, 1]) {
+      try {
+        url = await toPng(exportFrame.value, { pixelRatio, width: EXPORT_W, height: EXPORT_H, backgroundColor: '#ECEEF1', cacheBust: true })
+      } catch {
+        url = ''
+      }
+      if (url.length > 100) break
+    }
+    if (!url) return
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${slug(props.metricTitle)}-${slug(regionalShort.value)}-${slug(props.exportContext || new Date().toISOString().slice(0, 10))}.png`
+    link.click()
+  } finally {
+    isExporting.value = false
+  }
 }
 </script>
 
@@ -170,9 +210,10 @@ async function exportChart() {
           type="button"
           data-export-control
           class="ui-btn-soft"
+          :disabled="isExporting"
           @click="exportChart"
         >
-          <i class="fa-solid fa-download"></i>
+          <i :class="isExporting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-download'" aria-hidden="true"></i>
           Salvar imagem
         </button>
         <label class="text-[14px] font-medium text-steel" :for="`ordem-${metricTitle}`">Ordenar por</label>
@@ -252,6 +293,48 @@ async function exportChart() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Moldura da imagem salva (fora da tela, só durante a exportação) -->
+    <div v-if="isExporting" class="export-host" aria-hidden="true">
+      <div ref="exportFrame" class="xf" :style="{ width: `${EXPORT_W}px`, height: `${EXPORT_H}px` }">
+        <header class="xf-head">
+          <div>
+            <p class="xf-context">{{ regionalName }}<template v-if="exportContext">, {{ exportContext }}</template></p>
+            <h2 class="xf-title">{{ metricTitle }}</h2>
+          </div>
+          <div class="xf-legend">
+            <span><i class="xf-dot xf-good"></i>Até {{ formatLimit(metaThreshold) }}%</span>
+            <span><i class="xf-dot xf-warn"></i>{{ formatLimit(metaThreshold) }}% a {{ formatLimit(attention) }}%</span>
+            <span><i class="xf-dot xf-bad"></i>Acima de {{ formatLimit(attention) }}%</span>
+          </div>
+        </header>
+
+        <div class="xf-chart">
+          <div class="xf-axis">
+            <span v-for="tick in yTicks" :key="tick.ratio" :style="{ bottom: `${tick.ratio * 100}%` }">{{ tick.label }}</span>
+          </div>
+          <div class="xf-plot">
+            <div v-for="tick in yTicks" :key="`xg-${tick.ratio}`" class="xf-grid" :style="{ bottom: `${tick.ratio * 100}%` }" />
+            <div class="xf-target" :style="{ bottom: `${targetPercent}%` }"><span>Meta {{ formatLimit(metaThreshold) }}%</span></div>
+            <div class="xf-bars" :style="{ gridTemplateColumns: `repeat(${chartRows.length}, minmax(0, 1fr))` }">
+              <div v-for="row in chartRows" :key="`x-${row.code}`" class="xf-col" :class="{ 'xf-col-regional': row.isRegional }">
+                <span class="xf-value" :style="{ bottom: `calc(${getBarHeight(row)}% + 6px)` }">{{ row.pendingPct.toFixed(1).replace('.', ',') }}%</span>
+                <div class="xf-bar" :class="`xf-${getBarClass(row)}`" :style="{ height: `${getBarHeight(row)}%` }" />
+                <div class="xf-label">
+                  <strong>{{ row.isRegional ? 'Regional' : row.code }}</strong>
+                  <span>{{ row.isRegional ? regionalShort : 'Loja' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="xf-foot">
+          <span>{{ chartRows.filter((row) => !row.isRegional).length }} lojas. Gerado em {{ generatedAt }}.</span>
+          <span class="xf-brand"><i class="xf-tag"></i>Auditorias</span>
+        </footer>
       </div>
     </div>
   </div>
@@ -471,4 +554,63 @@ async function exportChart() {
   .chart-header { align-items: flex-start; flex-direction: column; gap: 8px; }
   .chart-scroll { padding-right: 12px; padding-left: 12px; }
 }
+
+/* Moldura da imagem salva: cores fixas do tema claro */
+.export-host { position: fixed; top: 0; left: -100000px; pointer-events: none; }
+.xf {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 44px 52px 36px;
+  background: #ECEEF1;
+  color: #1B2430;
+  font-family: 'Barlow', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.xf * { box-sizing: border-box; }
+.xf-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; }
+.xf-context { margin: 0; color: #5B6573; font-size: 20px; font-weight: 600; }
+.xf-title { margin: 2px 0 0; font-family: 'Barlow Condensed', sans-serif; font-size: 54px; font-weight: 600; line-height: 1; }
+.xf-legend { display: flex; gap: 22px; color: #5B6573; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.xf-legend span { display: inline-flex; align-items: center; gap: 8px; }
+.xf-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.xf-good { background: #18864B; }
+.xf-warn { background: #E39A1F; }
+.xf-bad { background: #C8233A; }
+.xf-chart {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  flex: 1;
+  min-height: 0;
+  margin-top: 30px;
+  padding: 40px 28px 72px 16px;
+  border: 1px solid #D9DDE2;
+  border-radius: 10px;
+  background: #fff;
+}
+.xf-axis { position: relative; color: #5B6573; font-size: 16px; font-weight: 600; }
+.xf-axis span { position: absolute; right: 12px; transform: translateY(50%); }
+.xf-plot { position: relative; border-bottom: 1px solid #C3C9D0; }
+.xf-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed #D9DDE2; }
+.xf-target { position: absolute; left: 0; right: 0; z-index: 3; border-top: 2px solid #1B2430; }
+.xf-target span { position: absolute; top: -28px; left: 6px; padding: 2px 9px; border-radius: 3px; background: #FFD60A; color: #1B2430; font-size: 16px; font-weight: 700; }
+.xf-bars { position: absolute; inset: 0; display: grid; gap: 14px; }
+.xf-col { position: relative; }
+.xf-col-regional { margin-left: 10px; padding-left: 16px; border-left: 1px solid #C3C9D0; }
+.xf-bar { position: absolute; right: 10%; bottom: 0; left: 10%; min-height: 2px; border-radius: 3px 3px 0 0; }
+.xf-col-regional .xf-bar { left: calc(10% + 16px); }
+.xf-bar-good { background: #18864B; }
+.xf-bar-warning { background: #E39A1F; }
+.xf-bar-danger { background: #C8233A; }
+.xf-bar-regional { background: #1B2430; }
+.xf-value { position: absolute; left: 50%; z-index: 4; transform: translateX(-50%); color: #1B2430; font-family: 'Barlow Condensed', sans-serif; font-size: 24px; font-weight: 600; white-space: nowrap; }
+.xf-col-regional .xf-value { left: calc(50% + 8px); }
+.xf-label { position: absolute; top: 100%; left: 0; right: 0; padding-top: 10px; text-align: center; line-height: 1.1; }
+.xf-col-regional .xf-label { left: 16px; }
+.xf-label strong { display: block; color: #1B2430; font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 600; }
+.xf-label span { display: block; margin-top: 2px; color: #5B6573; font-size: 14px; }
+.xf-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; color: #5B6573; font-size: 16px; font-weight: 500; }
+.xf-brand { display: inline-flex; align-items: center; gap: 8px; color: #1B2430; font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; }
+.xf-tag { position: relative; display: inline-block; width: 22px; height: 15px; border-radius: 2px; background: #FFD60A; }
+.xf-tag::after { content: ''; position: absolute; top: 50%; left: 4px; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: #1B2430; }
 </style>

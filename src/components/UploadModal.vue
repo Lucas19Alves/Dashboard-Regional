@@ -54,7 +54,7 @@ function submitUpload() {
       <div class="flex items-start justify-between gap-4">
         <div>
           <h3 id="upload-title" class="font-display text-[28px] font-semibold leading-tight text-ink">
-            {{ isUpdate ? 'Substituir planilha' : 'Importar planilha' }}
+            {{ isUpdate ? 'Atualizar dados' : 'Importar planilha' }}
           </h3>
           <p class="mt-1 text-[15px] text-steel">Consolidado de {{ auditType }} da {{ regionalName }}.</p>
         </div>
@@ -64,7 +64,7 @@ function submitUpload() {
       </div>
 
       <p v-if="isUpdate" class="mt-4 rounded-md bg-tag-soft px-3 py-2 text-[14px] font-medium text-ink">
-        A planilha atual deste dia será substituída por inteiro.
+        Envie a planilha mais recente. Os dados atuais deste dia serão trocados pelos novos.
       </p>
 
       <label
@@ -92,7 +92,7 @@ function submitUpload() {
         <button type="button" class="ui-btn-secondary" :disabled="busy" @click="close">Cancelar</button>
         <button type="button" class="ui-btn-primary" :disabled="!selectedFile || busy" @click="submitUpload">
           <i v-if="busy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
-          {{ busy ? 'Lendo planilha…' : isUpdate ? 'Substituir planilha' : 'Importar planilha' }}
+          {{ busy ? 'Lendo planilha…' : isUpdate ? 'Atualizar dados' : 'Importar planilha' }}
         </button>
       </div>
     </div>
