@@ -1,5 +1,6 @@
 <script setup>
 import PageHeader from '../components/PageHeader.vue'
+import MetricCard from '../components/MetricCard.vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { toPng } from 'html-to-image'
 import { listSessions } from '../lib/database'
@@ -63,7 +64,7 @@ const regionalSummary = computed(() => report.value.totals)
 const rankedStores = computed(() => report.value.ranking)
 const comparison = computed(() => report.value.previous)
 
-const chartPalette = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#fb7185', '#f97316', '#6366f1']
+const chartPalette = ['#2F6FB3', '#7A4FB0', '#0F8B8D', '#C25E9E', '#4E7D2E', '#B5651D', '#5B6CC9', '#8C6D1F', '#2A9DBA', '#A1465B', '#3F8F6B', '#6E5A9E', '#D07A3A']
 
 const trendDates = computed(() => {
   return filteredSessions.value.map((session) => ({
@@ -118,7 +119,7 @@ const storeTrendSeries = computed(() => {
 
 const chartSeries = computed(() => [{
   code: 'Regional',
-  color: '#0f172a',
+  color: '#1B2430',
   isRegional: true,
   points: regionalTrendSeries.value,
 }, ...storeTrendSeries.value.map((series) => ({ ...series, isRegional: false }))])
@@ -264,7 +265,7 @@ const headerChips = computed(() => [
   { label: 'Período', value: startDate.value || endDate.value ? `${formatDateBR(startDate.value)} a ${formatDateBR(endDate.value)}` : 'Todo o histórico' },
   { label: 'Status', value: STATUS_OPTIONS.find((option) => option.value === selectedStatus.value)?.label || 'Todas' },
   { label: 'Lojas', value: selectedStores.value.length === storeCodes.value.length ? `Todas (${storeCodes.value.length})` : `${selectedStores.value.length} de ${storeCodes.value.length}` },
-  { label: 'Auditorias', value: `${report.value.sessions.length} (${report.value.statusCounts.fechada} fechadas · ${report.value.statusCounts.aberta} abertas)` },
+  { label: 'Auditorias', value: `${report.value.sessions.length} (${report.value.statusCounts.fechada} fechadas, ${report.value.statusCounts.aberta} abertas)` },
 ])
 const cancellationCount = computed(() => regionalSummary.value.cancellations)
 const selectedStoresLabel = computed(() => selectedStores.value.length === storeCodes.value.length ? 'Todas' : selectedStores.value.join(', '))
@@ -274,9 +275,9 @@ function formatMetric(value, format) {
 }
 
 function deltaClass(metric) {
-  if (!metric.hasPrevious || metric.delta === 0 || metric.better === 'neutral') return 'text-slate-500'
+  if (!metric.hasPrevious || metric.delta === 0 || metric.better === 'neutral') return 'text-steel'
   const improved = metric.better === 'up' ? metric.delta > 0 : metric.delta < 0
-  return improved ? 'text-emerald-600' : 'text-rose-600'
+  return improved ? 'text-good' : 'text-bad'
 }
 
 function formatDelta(metric) {
@@ -298,7 +299,7 @@ const snapshotFilters = computed(() => [
   { label: 'Tipo', value: snapshotType.value || selectedAuditType.value },
   { label: 'Status', value: statusLabel.value },
   { label: 'Lojas', value: selectedStores.value.length === storeCodes.value.length ? `Todas (${storeCodes.value.length})` : `${selectedStores.value.length} de ${storeCodes.value.length}` },
-  { label: 'Auditorias', value: `${snapshotReport.value?.sessions.length ?? 0} (${snapshotReport.value?.statusCounts.fechada ?? 0} fechadas · ${snapshotReport.value?.statusCounts.aberta ?? 0} abertas)` },
+  { label: 'Auditorias', value: `${snapshotReport.value?.sessions.length ?? 0} (${snapshotReport.value?.statusCounts.fechada ?? 0} fechadas, ${snapshotReport.value?.statusCounts.aberta ?? 0} abertas)` },
 ])
 
 function slug(value) {
@@ -404,7 +405,7 @@ onMounted(async () => {
 <template>
   <div class="space-y-6">
     <PageHeader
-      :eyebrow="`${region.name} · Relatórios`"
+      :eyebrow="`${region.name}, relatórios`"
       :title="selectedAuditType === 'Geral' ? 'Visão geral' : `Auditoria de ${selectedAuditType}`"
       :chips="headerChips"
     />
@@ -413,7 +414,7 @@ onMounted(async () => {
       <div class="mb-5 flex flex-wrap gap-6">
        <div>
         <p class="ui-eyebrow">Tipo de auditoria</p>
-        <div class="mt-3 ui-seg">
+        <div class="mt-2 ui-seg">
           <button
             v-for="type in auditTypes"
             :key="type"
@@ -427,8 +428,8 @@ onMounted(async () => {
         </div>
        </div>
        <div>
-        <p class="ui-eyebrow">Situação da auditoria</p>
-        <div class="mt-3 ui-seg">
+        <p class="ui-eyebrow">Situação</p>
+        <div class="mt-2 ui-seg">
           <button
             v-for="option in STATUS_OPTIONS"
             :key="option.value"
@@ -445,63 +446,53 @@ onMounted(async () => {
       </div>
 
       <div class="grid gap-4 xl:grid-cols-[1.2fr_1.2fr_1fr]">
-        <label class="space-y-2">
-          <span class="ui-eyebrow">Data inicial</span>
+        <label class="block space-y-1.5">
+          <span class="ui-eyebrow block">De</span>
           <input v-model="startDate" type="date" class="ui-input" />
         </label>
 
-        <label class="space-y-2">
-          <span class="ui-eyebrow">Data final</span>
+        <label class="block space-y-1.5">
+          <span class="ui-eyebrow block">Até</span>
           <input v-model="endDate" type="date" class="ui-input" />
         </label>
 
-        <div class="space-y-2">
-          <span class="ui-eyebrow">Ações</span>
-          <div class="flex gap-2">
-            <button class="ui-btn-secondary flex-1" @click="resetPeriod">
-              Reset
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p class="ui-eyebrow">Filtros rápidos</p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <button
-            v-for="days in quickRanges"
-            :key="days"
-            type="button"
-            class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-            @click="applyQuickPeriod(days)"
-          >
-            Últimos {{ days }} dias
+        <div class="flex items-end">
+          <button type="button" class="ui-btn-secondary w-full" @click="resetPeriod">
+            Usar todo o histórico
           </button>
         </div>
       </div>
 
-      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p class="ui-eyebrow">Lojas</p>
-            <p class="mt-2 text-sm text-slate-700">{{ selectedStoresLabel }}</p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button class="rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="selectAllStores">
-              Todas
-            </button>
-            <button class="rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100" @click="clearStoreSelection">
-              Limpar
-            </button>
+      <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        <span class="mr-1 text-[14px] text-steel">Atalhos:</span>
+        <button
+          v-for="days in quickRanges"
+          :key="days"
+          type="button"
+          class="ui-pill !font-sans !text-[14px]"
+          @click="applyQuickPeriod(days)"
+        >
+          Últimos {{ days }} dias
+        </button>
+      </div>
+
+      <div class="mt-5 border-t border-line pt-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <p class="ui-eyebrow">Lojas no relatório</p>
+          <div class="flex gap-3 text-[14px] font-semibold">
+            <button type="button" class="text-ink underline-offset-4 hover:underline" @click="selectAllStores">Marcar todas</button>
+            <button type="button" class="text-steel underline-offset-4 hover:text-ink hover:underline" @click="clearStoreSelection">Desmarcar todas</button>
           </div>
         </div>
 
-        <div class="mt-4 flex flex-wrap gap-2">
+        <div class="mt-2 flex flex-wrap gap-1.5">
           <button
             v-for="code in storeCodes"
             :key="code"
-            class="rounded-full border px-2.5 py-1.5 text-xs font-semibold transition"
-            :class="selectedStores.includes(code) ? 'border-sky-500 bg-sky-100 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'"
+            type="button"
+            class="ui-pill"
+            :class="{ 'ui-pill-on': selectedStores.includes(code) }"
+            :aria-pressed="selectedStores.includes(code)"
             @click="toggleStore(code)"
           >
             {{ code }}
@@ -510,41 +501,21 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-      <div class="ui-card p-5">
-        <p class="ui-kpi-label">Auditorias</p>
-        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ auditCount }}</p>
-      </div>
-      <div class="ui-card p-5">
-        <p class="ui-kpi-label">{{ reportLabels.read }}</p>
-        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ regionalSummary.readPct.toFixed(2) }}%</p>
-      </div>
-      <div class="ui-card p-5">
-        <p class="ui-kpi-label">{{ reportLabels.pending }}</p>
-        <p class="mt-2 text-[34px] font-black leading-none tracking-tight" :class="regionalSummary.pendingPct <= metaThreshold ? 'text-emerald-600' : regionalSummary.pendingPct <= 7 ? 'text-amber-600' : 'text-rose-600'">
-          {{ regionalSummary.pendingPct.toFixed(2) }}%
-        </p>
-      </div>
-      <div class="ui-card p-5">
-        <p class="ui-kpi-label">{{ reportLabels.accuracy }}</p>
-        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-slate-900">{{ regionalSummary.thirdPct.toFixed(2) }}%</p>
-      </div>
-      <div class="ui-card-alert p-5">
-        <p class="ui-kpi-label !text-rose-600">Cancelamentos</p>
-        <p class="mt-2 text-[34px] font-black leading-none tracking-tight text-rose-700">{{ cancellationCount }}</p>
-      </div>
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <MetricCard label="Auditorias" :value="auditCount" />
+      <MetricCard :label="reportLabels.read" :value="`${regionalSummary.readPct.toFixed(2)}%`" />
+      <MetricCard :label="reportLabels.pending" :value="`${regionalSummary.pendingPct.toFixed(2)}%`" subtext="Meta: até 3%" :tone="regionalSummary.pendingPct <= metaThreshold ? 'green' : regionalSummary.pendingPct <= 7 ? 'orange' : 'red'" />
+      <MetricCard :label="reportLabels.accuracy" :value="`${regionalSummary.thirdPct.toFixed(2)}%`" />
+      <MetricCard label="Lojas canceladas" :value="cancellationCount" :tone="cancellationCount ? 'red' : 'default'" subtext="Somadas no período" />
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
       <div class="ui-card p-5">
         <div class="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <p class="ui-eyebrow">Comparativo</p>
-            <h2 class="ui-title">Mês anterior</h2>
-          </div>
-          <p class="text-xs font-medium text-slate-500">{{ comparison.rangeLabel }}</p>
+          <h2 class="ui-title !mt-0">Comparado ao mês anterior</h2>
+          <p class="text-[14px] text-steel">{{ comparison.rangeLabel }}</p>
         </div>
-        <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <div class="mt-3 overflow-x-auto">
           <table class="min-w-full text-left text-sm">
             <thead class="ui-table-head">
               <tr>
@@ -554,11 +525,11 @@ onMounted(async () => {
                 <th class="px-4 py-2.5 text-right">Variação</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-line">
               <tr v-for="metric in comparison.metrics" :key="metric.key">
-                <td class="px-4 py-2.5 font-medium text-slate-700">{{ metric.label }}</td>
-                <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatMetric(metric.current, metric.format) }}</td>
-                <td class="px-4 py-2.5 text-right text-slate-600">{{ metric.hasPrevious ? formatMetric(metric.previous, metric.format) : '—' }}</td>
+                <td class="px-4 py-2.5 font-medium text-ink">{{ metric.label }}</td>
+                <td class="px-4 py-2.5 text-right font-display text-[18px] font-semibold text-ink">{{ formatMetric(metric.current, metric.format) }}</td>
+                <td class="px-4 py-2.5 text-right text-steel">{{ metric.hasPrevious ? formatMetric(metric.previous, metric.format) : '—' }}</td>
                 <td class="px-4 py-2.5 text-right font-semibold" :class="deltaClass(metric)">{{ formatDelta(metric) }}</td>
               </tr>
             </tbody>
@@ -567,15 +538,14 @@ onMounted(async () => {
       </div>
 
       <div class="ui-card p-5">
-        <p class="ui-eyebrow">Exportar</p>
-        <h2 class="ui-title">Imagens em alta resolução</h2>
-        <p class="mt-1 text-sm text-slate-500">3840×2160 (16:9) com cards, colunas por loja, evolução, comparativo, ranking e filtros aplicados.</p>
+        <h2 class="ui-title !mt-0">Baixar relatório em imagem</h2>
+        <p class="mt-1 text-[14px] text-steel">Imagem 3840×2160 com indicadores, gráficos, comparativo e ranking, usando os filtros acima.</p>
         <div class="mt-4 grid grid-cols-2 gap-2">
           <button
             v-for="type in auditTypes"
             :key="type"
             type="button"
-            class="ui-btn-soft py-2.5"
+            class="ui-btn-soft"
             :disabled="Boolean(exportingType)"
             @click="exportSnapshot(type)"
           >
@@ -590,69 +560,59 @@ onMounted(async () => {
           @click="exportAllSnapshots"
         >
           <i class="fa-solid fa-download"></i>
-          Baixar as 4 imagens
+          Baixar as quatro imagens
         </button>
       </div>
     </div>
 
     <div class="ui-card p-5">
       <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p class="ui-eyebrow">Insights</p>
-          <h2 class="ui-title">O que está acontecendo</h2>
-        </div>
-        <div class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700">
-          Seleção ativa: {{ selectedStoresLabel || 'Nenhuma loja' }}
-        </div>
+        <h2 class="ui-title !mt-0">Destaques do período</h2>
+        <p class="text-[14px] text-steel">Lojas: {{ selectedStoresLabel || 'nenhuma selecionada' }}</p>
       </div>
 
       <div v-if="insights.length" class="grid gap-3 lg:grid-cols-4">
         <div
           v-for="insight in insights"
           :key="insight.title"
-          class="rounded-2xl border p-4 shadow-sm"
+          class="border-l-[3px] py-1 pl-4"
           :class="{
-            'border-emerald-200 bg-emerald-50': insight.tone === 'positive',
-            'border-amber-200 bg-amber-50': insight.tone === 'warning',
-            'border-rose-200 bg-rose-50': insight.tone === 'negative',
-            'border-slate-200 bg-slate-50': insight.tone === 'neutral',
+            'border-good': insight.tone === 'positive',
+            'border-warn': insight.tone === 'warning',
+            'border-bad': insight.tone === 'negative',
+            'border-line-strong': insight.tone === 'neutral',
           }"
         >
-          <p class="ui-kpi-label">{{ insight.title }}</p>
-          <p class="mt-3 text-sm leading-6 text-slate-700">{{ insight.body }}</p>
+          <p class="text-[16px] font-semibold text-ink">{{ insight.title }}</p>
+          <p class="mt-1 text-[15px] leading-6 text-steel">{{ insight.body }}</p>
         </div>
       </div>
     </div>
 
     <div ref="trendChartCard" class="ui-card p-5">
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p class="ui-eyebrow">Evolução</p>
-          <h2 class="ui-title">{{ reportLabels.read }} ao longo do período</h2>
-        </div>
+        <h2 class="ui-title !mt-0">{{ reportLabels.read }} ao longo do período</h2>
         <div class="flex items-center gap-2">
           <button
             type="button"
             data-export-control
-            class="ui-btn-soft text-xs"
+            class="ui-btn-soft"
             @click="exportTrendChart"
           >
             <i class="fa-solid fa-download"></i>
             Salvar imagem
           </button>
-          <div class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-            Meta de pendência: {{ metaThreshold }}%
-          </div>
+          <span class="ui-badge ui-badge-mute">Meta de pendência: {{ metaThreshold }}%</span>
         </div>
       </div>
 
       <div v-if="chartPoints.length" class="space-y-4">
-        <div class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-inner">
+        <div class="relative overflow-hidden rounded-md border border-line p-3">
           <svg viewBox="0 0 640 230" class="h-[420px] w-full cursor-crosshair" role="img" aria-label="Comparativo de leitura por loja e regional" @mousemove="handleChartMove" @mouseleave="clearTrendHover">
             <defs>
               <linearGradient id="regionalArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.24" />
-                <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.01" />
+                <stop offset="0%" stop-color="#1B2430" stop-opacity="0.12" />
+                <stop offset="100%" stop-color="#1B2430" stop-opacity="0" />
               </linearGradient>
               <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
                 <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.14" />
@@ -708,30 +668,30 @@ onMounted(async () => {
             </g>
           </svg>
 
-          <div v-if="hoveredTrendIndex !== null && currentHoverDate" class="absolute right-3 top-3 max-w-xs rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm transition-all">
-            <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{{ currentHoverDate.label }}</p>
+          <div v-if="hoveredTrendIndex !== null && currentHoverDate" class="pointer-events-none absolute right-3 top-3 max-w-xs rounded-md bg-ink p-3 text-white shadow-lg">
+            <p class="font-display text-[18px] font-semibold">{{ currentHoverDate.label }}</p>
             <div class="mt-2 space-y-1.5">
-              <div v-for="row in hoverRows" :key="row.code" class="flex items-center justify-between gap-3 text-xs text-slate-700">
+              <div v-for="row in hoverRows" :key="row.code" class="flex items-center justify-between gap-3 text-[13px] text-white/80">
                 <div class="flex items-center gap-2">
                   <span class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" />
-                <span :class="row.isRegional ? 'font-bold text-slate-900' : ''">{{ row.displayName }}</span>
+                <span :class="row.isRegional ? 'font-bold text-white' : ''">{{ row.displayName }}</span>
                 </div>
-                <span class="font-semibold text-slate-900">{{ (row.value ?? 0).toFixed(2) }}%</span>
+                <span class="font-semibold text-white">{{ (row.value ?? 0).toFixed(2) }}%</span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="flex flex-wrap gap-3">
-          <div v-for="series in chartPoints" :key="series.code" class="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700">
+          <div v-for="series in chartPoints" :key="series.code" class="flex items-center gap-1.5 text-[14px] font-medium text-steel">
             <span class="h-2.5 w-2.5 rounded-full" :style="{ background: series.color }" />
             {{ series.code }}
           </div>
         </div>
       </div>
 
-      <div v-else class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-        Sem dados disponíveis para o período selecionado.
+      <div v-else class="rounded-md border border-dashed border-line-strong px-4 py-6 text-[15px] text-steel">
+        Nenhuma auditoria no período escolhido. Amplie as datas ou marque mais lojas.
       </div>
     </div>
 
@@ -749,13 +709,10 @@ onMounted(async () => {
 
     <div class="ui-card p-5">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="ui-eyebrow">Detalhamento</p>
-          <h2 class="ui-title">Ranking por loja</h2>
-        </div>
-        <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <h2 class="ui-title !mt-0">Ranking por loja</h2>
+        <label class="flex items-center gap-2 text-[14px] font-medium text-steel">
           Ordenar por
-          <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
+          <select v-model="sortMode" class="ui-input !w-auto !py-0">
             <option value="pending">{{ reportLabels.pending }}</option>
             <option value="read">{{ reportLabels.read }}</option>
             <option value="accuracy">{{ reportLabels.accuracy }}</option>
@@ -765,8 +722,8 @@ onMounted(async () => {
         </label>
       </div>
 
-      <div class="overflow-hidden rounded-2xl border border-slate-200">
-        <table class="min-w-full divide-y divide-slate-200 text-left">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-left">
           <thead class="ui-table-head">
             <tr>
               <th class="px-4 py-3">Loja</th>
@@ -778,20 +735,20 @@ onMounted(async () => {
               <th class="px-4 py-3">Cancelamentos</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-200 bg-white text-sm text-slate-700">
-            <tr v-for="row in rankedStores" :key="row.code" :class="row.hasData ? '' : 'bg-slate-50'">
-              <td class="px-4 py-3 font-semibold text-slate-900">
+          <tbody class="divide-y divide-line text-[15px] text-ink">
+            <tr v-for="row in rankedStores" :key="row.code" class="hover:bg-floor/50" :class="row.hasData ? '' : 'text-steel'">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold">
                 <span class="store-name-cell" :title="row.name">{{ row.displayName }}</span>
               </td>
               <template v-if="row.hasData">
                 <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
                 <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
-                <td class="px-4 py-3">{{ row.pendingPct.toFixed(2) }}%</td>
+                <td class="px-4 py-3 font-semibold" :class="row.pendingPct <= metaThreshold ? 'text-good' : row.pendingPct <= 7 ? 'text-warn' : 'text-bad'">{{ row.pendingPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3">{{ row.thirdPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3">{{ row.movedItems.toLocaleString('pt-BR') }}</td>
               </template>
-              <td v-else colspan="5" class="px-4 py-3 text-center text-xs font-medium italic text-slate-400">Sem auditoria válida no período</td>
-              <td class="px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="row.cancellationCount ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'">{{ row.cancellationCount }}</span></td>
+              <td v-else colspan="5" class="px-4 py-3 text-[14px] text-steel">Sem auditoria válida no período</td>
+              <td class="px-4 py-3"><span class="ui-badge" :class="row.cancellationCount ? 'ui-badge-bad' : 'ui-badge-mute'">{{ row.cancellationCount }}</span></td>
             </tr>
           </tbody>
         </table>

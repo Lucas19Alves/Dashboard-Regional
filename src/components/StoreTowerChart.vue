@@ -105,7 +105,7 @@ const chartScale = computed(() => {
 const targetPercent = computed(() => (metaThreshold / chartScale.value) * 100)
 const yTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
   ratio,
-  label: `${Number((chartScale.value * ratio).toFixed(1))}%`,
+  label: `${String(Number((chartScale.value * ratio).toFixed(1))).replace('.', ',')}%`,
 })))
 
 function toggleCode(code) {
@@ -159,22 +159,22 @@ async function exportChart() {
   <div ref="chartCard" class="ui-card p-5">
     <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <p class="ui-eyebrow">Indicador principal</p>
-        <h3 class="ui-title">{{ metricTitle }}</h3>
+        <h3 class="ui-title !mt-0">{{ metricTitle }}</h3>
+        <p class="text-[14px] text-steel">A linha marca a meta de 3%. A última coluna é a regional.</p>
       </div>
 
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div class="flex flex-wrap items-center gap-2" data-export-control>
         <button
           type="button"
           data-export-control
-          class="ui-btn-soft text-xs"
+          class="ui-btn-soft"
           @click="exportChart"
         >
           <i class="fa-solid fa-download"></i>
           Salvar imagem
         </button>
-        <label class="text-sm font-medium text-slate-700">Ordenar</label>
-        <select v-model="sortMode" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-200">
+        <label class="text-[14px] font-medium text-steel" :for="`ordem-${metricTitle}`">Ordenar por</label>
+        <select :id="`ordem-${metricTitle}`" v-model="sortMode" class="ui-input !w-auto !py-0">
           <option value="pending">Pendência</option>
           <option value="read">{{ primaryLabel === 'Pendência' ? 'Leitura' : 'Presença final' }}</option>
           <option value="accuracy">{{ secondaryLabel }}</option>
@@ -183,17 +183,19 @@ async function exportChart() {
       </div>
     </div>
 
-    <div class="mb-5 flex flex-wrap gap-2">
+    <div class="mb-5 flex flex-wrap gap-1.5" data-export-control>
       <button
         v-for="code in storeCodes"
         :key="code"
-        class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
-        :class="activeCodes.includes(code) ? 'border-sky-500 bg-sky-100 text-sky-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'"
+        type="button"
+        class="ui-pill"
+        :class="{ 'ui-pill-on': activeCodes.includes(code) }"
+        :aria-pressed="activeCodes.includes(code)"
         @click="toggleCode(code)"
       >
         {{ code }}
       </button>
-      <button class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200" @click="selectAll">
+      <button type="button" class="ui-pill !font-sans !text-[14px]" @click="selectAll">
         Todas
       </button>
     </div>
@@ -232,17 +234,17 @@ async function exportChart() {
                 <div class="bar-stage">
                   <div v-if="hoveredCode === row.code" class="bar-tooltip">
                     <div class="bar-tooltip-header">{{ row.displayName }}</div>
-                    <div class="bar-tooltip-body"><span>{{ primaryLabel }}</span><strong>{{ row.pendingPct.toFixed(2) }}%</strong></div>
-                    <div class="bar-tooltip-body"><span>Presença final</span><strong>{{ row.readPct.toFixed(2) }}%</strong></div>
-                    <div class="bar-tooltip-body"><span>{{ secondaryLabel }}</span><strong>{{ getSecondaryValue(row).toFixed(2) }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>{{ primaryLabel }}</span><strong>{{ row.pendingPct.toFixed(2).replace('.', ',') }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>{{ primaryLabel === 'Pendência' ? 'Leitura' : 'Presença final' }}</span><strong>{{ row.readPct.toFixed(2).replace('.', ',') }}%</strong></div>
+                    <div class="bar-tooltip-body"><span>{{ secondaryLabel }}</span><strong>{{ getSecondaryValue(row).toFixed(2).replace('.', ',') }}%</strong></div>
                   </div>
-                  <span class="bar-value" :style="{ bottom: `calc(${getBarHeight(row)}% + 8px)` }">{{ row.pendingPct.toFixed(1) }}%</span>
+                  <span class="bar-value" :style="{ bottom: `calc(${getBarHeight(row)}% + 8px)` }">{{ row.pendingPct.toFixed(1).replace('.', ',') }}%</span>
                   <div class="bar-fill" :class="getBarClass(row)" :style="{ height: `${getBarHeight(row)}%` }" />
                 </div>
 
                 <div class="chart-label">
                   <strong>{{ row.isRegional ? 'Regional' : row.code }}</strong>
-                  <span>{{ row.isRegional ? regionName : 'Loja' }}</span>
+                  <span>{{ row.isRegional ? regionalName.replace(/^Regional\s+/i, '') : 'Loja' }}</span>
                 </div>
               </div>
             </div>
@@ -256,7 +258,7 @@ async function exportChart() {
 <style scoped>
 .chart-panel {
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #D9DDE2;
   border-radius: 18px;
   background: #fff;
 }
@@ -266,19 +268,19 @@ async function exportChart() {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border-bottom: 1px solid #D9DDE2;
+  background: #fff;
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: #5B6573;
 }
 
 .chart-legend { display: flex; flex-wrap: wrap; gap: 16px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
-.legend-good { background: #10b981; }
-.legend-warning { background: #f59e0b; }
-.legend-danger { background: #ef4444; }
+.legend-good { background: #18864B; }
+.legend-warning { background: #E39A1F; }
+.legend-danger { background: #C8233A; }
 .chart-scale { white-space: nowrap; }
 
 .chart-scroll {
@@ -297,7 +299,7 @@ async function exportChart() {
   position: relative;
   height: 580px;
   margin-top: 12px;
-  color: #94a3b8;
+  color: #5B6573;
   font-size: 12px;
   font-weight: 600;
 }
@@ -311,14 +313,14 @@ async function exportChart() {
 .plot-area {
   position: relative;
   height: 592px;
-  border-bottom: 1px solid #cbd5e1;
+  border-bottom: 1px solid #C3C9D0;
 }
 
 .grid-line {
   position: absolute;
   left: 0;
   right: 0;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed #D9DDE2;
 }
 
 .bars-grid {
@@ -342,7 +344,7 @@ async function exportChart() {
 .chart-column-regional {
   margin-left: 8px;
   padding-left: 14px;
-  border-left: 1px solid #cbd5e1;
+  border-left: 1px solid #C3C9D0;
 }
 
 .bar-stage {
@@ -356,7 +358,7 @@ async function exportChart() {
   top: 12px;
   transform: translateX(-50%);
   min-width: 170px;
-  background: rgba(15, 23, 42, 0.96);
+  background: #1B2430;
   color: white;
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 14px;
@@ -369,8 +371,7 @@ async function exportChart() {
 .bar-tooltip-header {
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: rgba(255, 255, 255, 0.7);
   margin-bottom: 8px;
 }
@@ -399,8 +400,8 @@ async function exportChart() {
   bottom: 0;
   left: 12%;
   min-height: 2px;
-  border-radius: 8px 8px 2px 2px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 10px rgba(15,23,42,.1);
+  border-radius: 3px 3px 0 0;
+  box-shadow: none;
   transition: height 0.45s cubic-bezier(.2,.8,.2,1), filter 0.2s ease;
 }
 
@@ -413,26 +414,27 @@ async function exportChart() {
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
+  font-family: 'Barlow Condensed', sans-serif;
   font-size: 20px;
-  font-weight: 800;
-  color: #334155;
+  font-weight: 600;
+  color: #1B2430;
   white-space: nowrap;
 }
 
 .bar-good {
-  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  background: #18864B;
 }
 
 .bar-warning {
-  background: linear-gradient(180deg, #f59e0b 0%, #f97316 100%);
+  background: #E39A1F;
 }
 
 .bar-danger {
-  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  background: #C8233A;
 }
 
 .bar-regional {
-  background: linear-gradient(180deg, #334155 0%, #0f172a 100%);
+  background: #1B2430;
 }
 
 .target-line {
@@ -440,7 +442,7 @@ async function exportChart() {
   left: 0;
   right: 0;
   z-index: 3;
-  border-top: 2px dashed #059669;
+  border-top: 2px solid #1B2430;
 }
 
 .target-line span {
@@ -449,8 +451,8 @@ async function exportChart() {
   left: 8px;
   padding: 2px 7px;
   border-radius: 999px;
-  background: #ecfdf5;
-  color: #047857;
+  background: #FFD60A;
+  color: #1B2430;
   font-size: 12px;
   font-weight: 800;
 }
@@ -460,8 +462,8 @@ async function exportChart() {
   line-height: 1.15;
 }
 
-.chart-label strong { display: block; color: #0f172a; font-size: 15px; }
-.chart-label span { display: block; margin-top: 4px; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.chart-label strong { display: block; color: #1B2430; font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 600; }
+.chart-label span { display: block; margin-top: 2px; color: #5B6573; font-size: 12px; }
 
 @media (max-width: 640px) {
   .chart-header { align-items: flex-start; flex-direction: column; gap: 8px; }

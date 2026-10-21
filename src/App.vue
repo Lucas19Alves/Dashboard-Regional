@@ -15,7 +15,7 @@ const isRegionalArea = computed(() => Boolean(route.params.region))
 const menuItems = computed(() => [
   { name: 'Auditorias', to: `/regional/${regionId.value}/auditorias`, icon: 'fa-solid fa-calendar-days' },
   { name: 'Relatórios', to: `/regional/${regionId.value}/relatorios`, icon: 'fa-solid fa-chart-column' },
-  { name: 'Backup', to: `/regional/${regionId.value}/backup`, icon: 'fa-solid fa-floppy-disk' },
+  { name: 'Backup', to: `/regional/${regionId.value}/backup`, icon: 'fa-solid fa-box-archive' },
 ])
 
 const projectLinks = [
@@ -52,71 +52,69 @@ onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureI
 
 <template>
   <div class="app-shell">
-    <RouterLink v-if="isRegionalArea" to="/" class="region-switcher" title="Trocar regional">
-      <i class="fa-solid fa-arrow-left"></i>
-      <span>Regionais</span>
-      <strong>{{ activeRegion.code }}</strong>
-    </RouterLink>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <RouterLink to="/" class="wordmark" aria-label="Auditorias regionais, escolher regional">
+          <span class="wordmark-tag" aria-hidden="true"></span>
+          Auditorias
+        </RouterLink>
+
+        <RouterLink v-if="isRegionalArea" to="/" class="region-switch" title="Trocar regional">
+          <span>Regional</span>
+          <strong>{{ activeRegion.code }}</strong>
+          <i class="fa-solid fa-chevron-down text-[10px]" aria-hidden="true"></i>
+        </RouterLink>
+
+        <nav v-if="isRegionalArea" class="topnav" aria-label="Navegação principal">
+          <RouterLink v-for="item in menuItems" :key="item.name" :to="item.to" class="topnav-link" active-class="topnav-link-active">
+            {{ item.name }}
+          </RouterLink>
+        </nav>
+
+        <div class="topbar-actions">
+          <button v-if="canInstall" type="button" class="install-btn" title="Instalar aplicativo" @click="installApp">
+            <i class="fa-solid fa-download" aria-hidden="true"></i>
+            <span>Instalar app</span>
+          </button>
+          <button type="button" class="icon-btn" aria-label="Sobre o projeto" title="Sobre o projeto" @click="openInfo()">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
     <main class="content-panel">
       <RouterView />
     </main>
 
     <nav v-if="isRegionalArea" class="bottom-navbar" aria-label="Navegação principal">
-      <template v-for="item in menuItems" :key="item.name">
-        <RouterLink :to="item.to" class="nav-pill" active-class="nav-pill-active" :title="item.name">
-          <i :class="item.icon" aria-hidden="true"></i>
-          <span>{{ item.name }}</span>
-        </RouterLink>
-      </template>
+      <RouterLink v-for="item in menuItems" :key="item.name" :to="item.to" class="nav-pill" active-class="nav-pill-active">
+        <i :class="item.icon" aria-hidden="true"></i>
+        <span>{{ item.name }}</span>
+      </RouterLink>
     </nav>
-
-    <button type="button" class="info-fab" aria-label="Informações do projeto" title="Informações" @click="openInfo()">
-      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-    </button>
-    <button v-if="canInstall" type="button" class="install-fab" title="Instalar aplicativo" @click="installApp">
-      <i class="fa-solid fa-download" aria-hidden="true"></i>
-      <span>Instalar</span>
-    </button>
   </div>
 
-  <div v-if="isInfoModalOpen" class="modal-backdrop" @click.self="closeInfo()">
-    <div class="project-info-card project-info-modal" role="dialog" aria-modal="true"
-      aria-labelledby="project-info-title">
-      <div class="project-header">
-        <div class="project-icon">
-          <i class="fa-solid fa-circle-info"></i>
-        </div>
-        <div>
-          <h3 id="project-info-title">Sobre o projeto</h3>
-          <p>Informações sobre o desenvolvedor</p>
-        </div>
-        <button type="button" class="project-close" @click="closeInfo()" aria-label="Fechar informações">
-          <i class="fa-solid fa-xmark"></i>
+  <div v-if="isInfoModalOpen" class="modal-backdrop" @click.self="closeInfo()" @keydown.esc="closeInfo()">
+    <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="project-info-title">
+      <div class="about-head">
+        <h3 id="project-info-title">Sobre o projeto</h3>
+        <button type="button" class="close-btn" aria-label="Fechar" @click="closeInfo()">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
       </div>
-
-      <div class="project-body">
+      <div class="about-body">
         <p>
-          Sistema projetado para importar e tratar os consolidados de auditorias de lojas a nível Regional, acompanhar o
-          progresso por período e gerar análises, relatórios e backups com os dados fornecidos.
+          Importa os consolidados de auditoria das lojas de cada regional, acompanha o andamento ao longo da semana e
+          gera relatórios e backups a partir desses dados.
         </p>
-
-        <div class="project-signature">
-          <span>Criado por</span>
-          <strong>Lucas Alves</strong>
-        </div>
-
-        <div class="project-links">
-          <a v-for="link in projectLinks" :key="link.label" :href="link.href" target="_blank" rel="noreferrer"
-            class="project-link">
-            <i :class="link.icon"></i>
-            <span>{{ link.label }}</span>
+        <p class="about-author">Criado por <strong>Lucas Alves</strong></p>
+        <div class="about-links">
+          <a v-for="link in projectLinks" :key="link.label" :href="link.href" target="_blank" rel="noreferrer" class="about-link">
+            <i :class="link.icon" aria-hidden="true"></i>
+            {{ link.label }}
           </a>
         </div>
-      </div>
-
-      <div class="project-footer">
-        <button type="button" class="project-close-button" @click="closeInfo()">Fechar</button>
       </div>
     </div>
   </div>

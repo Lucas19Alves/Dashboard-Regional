@@ -4,50 +4,27 @@ import { REGION_LIST } from '../lib/regions'
 
 <template>
   <div class="region-select-page">
-    <section class="region-hero">
-      <div class="region-hero-copy">
-        <p class="eyebrow">Dashboard regional</p>
-        <h1>Selecione a regional</h1>
-        <p class="hero-description">Acesse os indicadores e auditorias da sua operação.</p>
-      </div>
-      <div class="region-count">
-        <strong>{{ REGION_LIST.length }}</strong>
-        <span>regionais disponíveis</span>
-      </div>
+    <section class="region-intro">
+      <h1>Qual regional você vai acompanhar?</h1>
+      <p>Cada regional tem o próprio calendário de auditorias, relatórios e backup.</p>
     </section>
 
-    <section class="region-grid" aria-label="Regionais disponíveis">
+    <section class="region-list" aria-label="Regionais">
       <RouterLink
         v-for="region in REGION_LIST"
         :key="region.id"
         :to="`/regional/${region.id}/auditorias`"
         class="region-card"
-        :class="`region-card-${region.accent}`"
       >
-        <div class="region-card-top">
-          <span class="region-code">{{ region.code }}</span>
-          <span class="region-status">
-            <i class="fa-solid fa-circle-check"></i>
-            Disponível
-          </span>
-        </div>
-
-        <div class="region-card-body">
-          <div class="region-icon"><i class="fa-solid fa-store"></i></div>
+        <span class="region-tag" aria-hidden="true">{{ region.code }}</span>
+        <div class="min-w-0">
           <h2>{{ region.name }}</h2>
-          <p>{{ region.description }}</p>
+          <p>{{ region.storeCodes.length || 'Sem' }} {{ region.storeCodes.length === 1 ? 'loja' : 'lojas' }}</p>
         </div>
-
-        <div class="region-card-footer">
-          <div>
-            <strong>{{ region.storeCodes.length || '—' }}</strong>
-            <span>{{ region.storeCodes.length === 1 ? 'loja' : 'lojas' }}</span>
-          </div>
-          <span class="region-enter">Acessar <i class="fa-solid fa-arrow-right"></i></span>
-        </div>
+        <i class="fa-solid fa-arrow-right region-go" aria-hidden="true"></i>
       </RouterLink>
     </section>
 
-    <p class="region-footnote"><i class="fa-solid fa-shield-halved"></i> Os dados de cada regional permanecem separados.</p>
+    <p class="region-footnote">Os dados ficam salvos neste navegador, separados por regional.</p>
   </div>
 </template>

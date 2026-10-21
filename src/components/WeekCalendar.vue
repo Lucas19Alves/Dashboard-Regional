@@ -34,43 +34,97 @@ function nextWeek() {
 </script>
 
 <template>
-  <div class="ui-card p-4">
+  <section class="ui-card p-4 sm:p-5" aria-label="Semana de auditorias">
     <div class="mb-4 flex items-center justify-between gap-3">
-      <button class="ui-btn-secondary" @click="previousWeek">
-        ← Semana anterior
+      <button type="button" class="ui-btn-secondary !px-3" aria-label="Semana anterior" @click="previousWeek">
+        <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
+        <span class="hidden sm:inline">Anterior</span>
       </button>
-      <p class="ui-eyebrow">{{ weekLabel || 'Semana' }}</p>
-      <button class="ui-btn-secondary" @click="nextWeek">
-        Próxima semana →
+      <p class="font-display text-[20px] font-semibold text-ink">{{ weekLabel || 'Semana' }}</p>
+      <button type="button" class="ui-btn-secondary !px-3" aria-label="Próxima semana" @click="nextWeek">
+        <span class="hidden sm:inline">Próxima</span>
+        <i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
       </button>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-4">
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
       <button
         v-for="day in days"
         :key="day.iso"
-        class="rounded-[22px] border p-5 text-left shadow-[0_4px_14px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-md"
-        :class="selectedIso === day.iso ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100' : sessionByDay[day.iso] ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'"
+        type="button"
+        class="day-tag"
+        :class="{ 'day-tag-selected': selectedIso === day.iso, 'day-tag-loaded': sessionByDay[day.iso] }"
+        :aria-pressed="selectedIso === day.iso"
         @click="selectDay(day)"
       >
-        <div class="flex items-center justify-between">
-          <span class="ui-eyebrow">{{ day.label }}</span>
-          <span class="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" :class="sessionByDay[day.iso] ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'">
-            {{ sessionByDay[day.iso] ? 'Carregado' : 'Disponível' }}
+        <span class="flex items-baseline justify-between gap-2">
+          <span class="text-[15px] font-semibold">{{ day.label }}</span>
+          <span class="truncate text-[13px] font-medium opacity-75">{{ day.activity }}</span>
+        </span>
+        <span class="mt-3 flex flex-wrap items-end justify-between gap-x-2 gap-y-1">
+          <span class="font-display text-[30px] font-semibold leading-none sm:text-[38px]">{{ day.iso.slice(8, 10) }}/{{ day.iso.slice(5, 7) }}</span>
+          <span v-if="sessionByDay[day.iso]" class="text-right leading-tight">
+            <span class="hidden text-[12px] font-medium opacity-75 sm:block">{{ (sessionByDay[day.iso].auditType || day.activity) === 'Etiqueta' ? 'Leitura' : 'Presença' }}</span>
+            <span class="font-display text-[19px] font-semibold sm:text-[22px]">{{ (sessionByDay[day.iso].summary?.readPct || 0).toFixed(1).replace('.', ',') }}%</span>
           </span>
-        </div>
-        <div class="mt-5 flex items-center justify-between gap-3">
-          <div class="text-left">
-            <p class="text-[30px] font-black leading-none tracking-tight text-slate-900">{{ day.iso.slice(8, 10) }}/{{ day.iso.slice(5, 7) }}</p>
-            <p class="mt-1 text-sm font-semibold text-slate-500">{{ day.activity }}</p>
-          </div>
-          <div class="text-right text-xs text-slate-500">
-            <p v-if="sessionByDay[day.iso]" class="mt-1 text-lg font-black text-emerald-600">
-              {{ (sessionByDay[day.iso].summary?.readPct || 0).toFixed(2) }}%
-            </p>
-          </div>
-        </div>
+          <span v-else class="text-[13px] font-semibold opacity-70">
+            <i class="fa-solid fa-plus text-[10px]" aria-hidden="true"></i><span class="hidden sm:inline"> Importar</span>
+          </span>
+        </span>
       </button>
     </div>
-  </div>
+  </section>
 </template>
+
+<style scoped>
+.day-tag {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 112px;
+  padding: 14px 14px 14px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--steel);
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+/* Furo da etiqueta */
+.day-tag::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--floor);
+}
+
+.day-tag:hover { border-color: var(--ink); }
+
+.day-tag-loaded { color: var(--ink); }
+.day-tag-loaded::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--good);
+}
+
+.day-tag-selected,
+.day-tag-selected:hover {
+  border-color: #E0B800;
+  background: var(--tag);
+  color: var(--ink);
+}
+
+.day-tag-selected::before { border-color: rgba(27, 36, 48, 0.35); }
+.day-tag-selected::after { background: var(--ink); }
+</style>
