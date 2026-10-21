@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { STORE_CODES, formatStoreLabel, isCancelledStore } from '../lib/metrics'
 import { exportCardAsPng } from '../lib/exportImage'
+import { formatLimit, getAttention, settings } from '../lib/settings'
 
 const props = defineProps({
   stores: {
@@ -40,7 +41,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:selectedCodes'])
 const sortMode = ref('pending')
-const metaThreshold = 3
+const metaThreshold = computed(() => settings.meta)
+const attention = computed(() => getAttention())
 const hoveredCode = ref(null)
 
 const activeCodes = computed({
@@ -99,10 +101,10 @@ const chartRows = computed(() => {
 })
 
 const chartScale = computed(() => {
-  const highest = Math.max(metaThreshold, ...chartRows.value.map((row) => Number(row.pendingPct || 0)))
+  const highest = Math.max(metaThreshold.value, ...chartRows.value.map((row) => Number(row.pendingPct || 0)))
   return Math.max(10, Math.ceil(highest / 5) * 5)
 })
-const targetPercent = computed(() => (metaThreshold / chartScale.value) * 100)
+const targetPercent = computed(() => (metaThreshold.value / chartScale.value) * 100)
 const yTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
   ratio,
   label: `${String(Number((chartScale.value * ratio).toFixed(1))).replace('.', ',')}%`,
@@ -123,8 +125,8 @@ function selectAll() {
 
 function getBarClass(row) {
   if (row.isRegional) return 'bar-regional'
-  if (row.pendingPct <= metaThreshold) return 'bar-good'
-  if (row.pendingPct <= 7) return 'bar-warning'
+  if (row.pendingPct <= metaThreshold.value) return 'bar-good'
+  if (row.pendingPct <= attention.value) return 'bar-warning'
   return 'bar-danger'
 }
 
@@ -160,7 +162,7 @@ async function exportChart() {
     <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div>
         <h3 class="ui-title !mt-0">{{ metricTitle }}</h3>
-        <p class="text-[14px] text-steel">A linha marca a meta de 3%. A última coluna é a regional.</p>
+        <p class="text-[14px] text-steel">A linha marca a meta de {{ formatLimit(metaThreshold) }}%. A última coluna é a regional.</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2" data-export-control>
@@ -203,9 +205,9 @@ async function exportChart() {
     <div class="chart-panel">
       <div class="chart-header">
         <div class="chart-legend">
-          <span><i class="legend-dot legend-good"></i> Até 3%</span>
-          <span><i class="legend-dot legend-warning"></i> 3% a 7%</span>
-          <span><i class="legend-dot legend-danger"></i> Acima de 7%</span>
+          <span><i class="legend-dot legend-good"></i> Até {{ formatLimit(metaThreshold) }}%</span>
+          <span><i class="legend-dot legend-warning"></i> {{ formatLimit(metaThreshold) }}% a {{ formatLimit(attention) }}%</span>
+          <span><i class="legend-dot legend-danger"></i> Acima de {{ formatLimit(attention) }}%</span>
         </div>
         <span class="chart-scale">Escala máxima: {{ chartScale }}%</span>
       </div>
@@ -219,7 +221,7 @@ async function exportChart() {
           <div class="plot-area">
             <div v-for="tick in yTicks" :key="`grid-${tick.ratio}`" class="grid-line" :style="{ bottom: `${tick.ratio * 100}%` }" />
             <div class="target-line" :style="{ bottom: `${targetPercent}%` }">
-              <span>Meta 3%</span>
+              <span>Meta {{ formatLimit(metaThreshold) }}%</span>
             </div>
 
             <div class="bars-grid" :style="{ gridTemplateColumns: `repeat(${chartRows.length}, minmax(52px, 1fr))` }">
@@ -258,9 +260,9 @@ async function exportChart() {
 <style scoped>
 .chart-panel {
   overflow: hidden;
-  border: 1px solid #D9DDE2;
+  border: 1px solid var(--line);
   border-radius: 18px;
-  background: #fff;
+  background: var(--paper);
 }
 
 .chart-header {
@@ -268,19 +270,19 @@ async function exportChart() {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid #D9DDE2;
-  background: #fff;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
   font-size: 13px;
   font-weight: 600;
-  color: #5B6573;
+  color: var(--steel);
 }
 
 .chart-legend { display: flex; flex-wrap: wrap; gap: 16px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
-.legend-good { background: #18864B; }
+.legend-good { background: var(--good); }
 .legend-warning { background: #E39A1F; }
-.legend-danger { background: #C8233A; }
+.legend-danger { background: var(--bad); }
 .chart-scale { white-space: nowrap; }
 
 .chart-scroll {
@@ -299,7 +301,7 @@ async function exportChart() {
   position: relative;
   height: 580px;
   margin-top: 12px;
-  color: #5B6573;
+  color: var(--steel);
   font-size: 12px;
   font-weight: 600;
 }
@@ -313,14 +315,14 @@ async function exportChart() {
 .plot-area {
   position: relative;
   height: 592px;
-  border-bottom: 1px solid #C3C9D0;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .grid-line {
   position: absolute;
   left: 0;
   right: 0;
-  border-top: 1px dashed #D9DDE2;
+  border-top: 1px dashed var(--line);
 }
 
 .bars-grid {
@@ -344,7 +346,7 @@ async function exportChart() {
 .chart-column-regional {
   margin-left: 8px;
   padding-left: 14px;
-  border-left: 1px solid #C3C9D0;
+  border-left: 1px solid var(--line-strong);
 }
 
 .bar-stage {
@@ -359,7 +361,7 @@ async function exportChart() {
   transform: translateX(-50%);
   min-width: 170px;
   background: #1B2430;
-  color: white;
+  color: #fff;
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 14px;
   padding: 10px 12px;
@@ -417,12 +419,12 @@ async function exportChart() {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 20px;
   font-weight: 600;
-  color: #1B2430;
+  color: var(--ink);
   white-space: nowrap;
 }
 
 .bar-good {
-  background: #18864B;
+  background: var(--good);
 }
 
 .bar-warning {
@@ -430,11 +432,11 @@ async function exportChart() {
 }
 
 .bar-danger {
-  background: #C8233A;
+  background: var(--bad);
 }
 
 .bar-regional {
-  background: #1B2430;
+  background: var(--ink);
 }
 
 .target-line {
@@ -442,7 +444,7 @@ async function exportChart() {
   left: 0;
   right: 0;
   z-index: 3;
-  border-top: 2px solid #1B2430;
+  border-top: 2px solid var(--ink);
 }
 
 .target-line span {
@@ -462,8 +464,8 @@ async function exportChart() {
   line-height: 1.15;
 }
 
-.chart-label strong { display: block; color: #1B2430; font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 600; }
-.chart-label span { display: block; margin-top: 2px; color: #5B6573; font-size: 12px; }
+.chart-label strong { display: block; color: var(--ink); font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 600; }
+.chart-label span { display: block; margin-top: 2px; color: var(--steel); font-size: 12px; }
 
 @media (max-width: 640px) {
   .chart-header { align-items: flex-start; flex-direction: column; gap: 8px; }

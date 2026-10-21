@@ -1,5 +1,8 @@
 /** @type {import('tailwindcss').Config} */
+const token = (name) => `rgb(var(--c-${name}) / <alpha-value>)`
+
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -8,14 +11,17 @@ export default {
         display: ['"Barlow Condensed"', 'Barlow', 'system-ui', 'sans-serif'],
       },
       colors: {
-        ink: '#1B2430',
-        steel: '#5B6573',
-        line: { DEFAULT: '#D9DDE2', strong: '#C3C9D0' },
-        floor: '#ECEEF1',
-        tag: { DEFAULT: '#FFD60A', soft: '#FFF4B8', deep: '#E0B800' },
-        good: '#18864B',
-        warn: '#B86E00',
-        bad: '#C8233A',
+        // Cores ligadas a variáveis CSS para o modo escuro trocar tudo de uma vez.
+        white: token('paper'),
+        paper: token('paper'),
+        ink: token('ink'),
+        steel: token('steel'),
+        line: { DEFAULT: token('line'), strong: token('line-strong') },
+        floor: token('floor'),
+        tag: { DEFAULT: '#FFD60A', soft: token('tag-soft'), deep: '#E0B800', ink: '#1B2430' },
+        good: token('good'),
+        warn: token('warn'),
+        bad: token('bad'),
       },
     },
   },

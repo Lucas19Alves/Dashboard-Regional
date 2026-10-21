@@ -1,5 +1,8 @@
 <script setup>
-import { REGION_LIST } from '../lib/regions'
+import { computed } from 'vue'
+import { getRegionList } from '../lib/regions'
+
+const regions = computed(() => getRegionList())
 </script>
 
 <template>
@@ -11,7 +14,7 @@ import { REGION_LIST } from '../lib/regions'
 
     <section class="region-list" aria-label="Regionais">
       <RouterLink
-        v-for="region in REGION_LIST"
+        v-for="region in regions"
         :key="region.id"
         :to="`/regional/${region.id}/auditorias`"
         class="region-card"

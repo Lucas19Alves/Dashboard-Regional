@@ -1,3 +1,5 @@
+import { getAttention, getMeta } from './settings'
+
 export const REGIONAL_NAME = 'Regional SP6'
 export const STORE_CODES = ['008', '015', '093', '096', '112', '127', '149', '151', '233', '270', '280', '282', '337']
 export const ALLOWED_STORE_CODES = [...STORE_CODES]
@@ -79,10 +81,26 @@ export const DAY_CONFIG = [
   { key: 'thursday', label: 'Quinta', activity: 'Etiqueta' },
 ]
 
-function toIsoDate(date) {
-  const offsetInMinutes = date.getTimezoneOffset()
-  const localDate = new Date(date.getTime() - offsetInMinutes * 60 * 1000)
-  return localDate.toISOString().slice(0, 10)
+export function toIsoDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Data de hoje no fuso local (toISOString usaria UTC e viraria o dia às 21h).
+export function getTodayIso() {
+  return toIsoDate(new Date())
+}
+
+export function formatIsoDate(iso, options = { day: '2-digit', month: '2-digit', year: 'numeric' }) {
+  if (!iso) return '—'
+  const date = new Date(`${String(iso).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR', options)
+}
+
+export function formatPct(value, digits = 2) {
+  return `${Number(value || 0).toFixed(digits).replace('.', ',')}%`
 }
 
 export function getCurrentWeekDays(referenceDate = new Date()) {
@@ -154,7 +172,7 @@ export function normalizeStoreMetrics(row) {
     pendingPct,
     accuracyPct,
     readItems,
-    status: pendingPct <= 3 ? 'meta' : pendingPct <= 7 ? 'atenção' : 'alerta',
+    status: pendingPct <= getMeta() ? 'meta' : pendingPct <= getAttention() ? 'atenção' : 'alerta',
   }
 }
 
@@ -221,7 +239,7 @@ export function formatPercent(value) {
 }
 
 export function getStoreStatusLabel(pendingPct) {
-  if (pendingPct <= 3) return 'Dentro da meta'
-  if (pendingPct <= 7) return 'Atenção'
+  if (pendingPct <= getMeta()) return 'Dentro da meta'
+  if (pendingPct <= getAttention()) return 'Atenção'
   return 'Fora da meta'
 }

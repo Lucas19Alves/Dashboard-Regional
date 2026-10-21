@@ -4,12 +4,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import UploadModal from '../components/UploadModal.vue'
 import WeekCalendar from '../components/WeekCalendar.vue'
 import MetricCard from '../components/MetricCard.vue'
-import { getCurrentWeekDays, summarizeStores, normalizeStoreMetrics, buildForecast, filterAllowedStoreRows, parseNumeric, isCancelledStore } from '../lib/metrics'
+import BatchImportModal from '../components/BatchImportModal.vue'
+import { getCurrentWeekDays, summarizeStores, buildForecast, filterAllowedStoreRows, isCancelledStore, getTodayIso, formatIsoDate, formatStoreLabel, formatPct, toIsoDate } from '../lib/metrics'
 import { deleteSession, listSessions, upsertSession } from '../lib/database'
+import { EXPECTED_COLUMNS, buildSessionPayload, getAuditDay, parseRows, readSpreadsheet } from '../lib/importer'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
-import * as XLSX from 'xlsx'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
+import { formatLimit, getMetaTone, settings } from '../lib/settings'
+import { notify, confirmAction } from '../composables/feedback'
+import { useModal } from '../composables/useModal'
 
 const route = useRoute()
 const region = computed(() => getRegion(route.params.region))
@@ -23,6 +27,16 @@ const isStoreCancellationModalOpen = ref(false)
 const cancellationDraftCodes = ref([])
 const selectedDay = ref(null)
 const selectedChartCodes = ref([])
+const isBatchOpen = ref(false)
+const isUploading = ref(false)
+const tableSort = ref({ key: 'pendingPct', dir: 'desc' })
+
+useModal(() => { isStoreCancellationModalOpen.value = false }, () => isStoreCancellationModalOpen.value)
+
+const toneClass = { green: 'text-good', orange: 'text-warn', red: 'text-bad' }
+const toneBg = { green: 'bg-good', orange: 'bg-warn', red: 'bg-bad' }
+const toneBadge = { green: 'ui-badge-good', orange: 'ui-badge-warn', red: 'ui-badge-bad' }
+const toneLabel = { green: 'Na meta', orange: 'Atenção', red: 'Fora da meta' }
 
 const weekLabel = computed(() => {
   if (!currentWeek.value.length) return 'Semana'
@@ -57,7 +71,7 @@ const operationalCards = computed(() => {
   if (auditType.value === 'Presença') {
     return [
       { label: 'Presença', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Itens presentes sobre o SKU', tone: 'blue' },
-      { label: 'Ruptura identificada', value: `${summary.value.pendingPct.toFixed(2)}%`, subtext: 'Itens sem presença', tone: summary.value.pendingPct <= 3 ? 'green' : summary.value.pendingPct <= 7 ? 'orange' : 'red' },
+      { label: 'Ruptura identificada', value: `${summary.value.pendingPct.toFixed(2)}%`, subtext: 'Itens sem presença', tone: getMetaTone(summary.value.pendingPct) },
       { label: 'Itens presentes', value: summary.value.updatedItems.toLocaleString('pt-BR'), subtext: 'SKU com presença confirmada', tone: 'slate' },
       { label: 'Itens em ruptura', value: summary.value.ruptureItems.toLocaleString('pt-BR'), subtext: 'Base para a auditoria de ruptura', tone: 'slate' },
     ]
@@ -65,7 +79,7 @@ const operationalCards = computed(() => {
 
   return [
     { label: 'Presença após auditoria', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Presença após a verificação', tone: 'blue' },
-    { label: 'Ruptura final', value: `${summary.value.rupturePct.toFixed(2)}%`, subtext: 'Ruptura confirmada no fechamento', tone: summary.value.rupturePct <= 3 ? 'green' : summary.value.rupturePct <= 7 ? 'orange' : 'red' },
+    { label: 'Ruptura final', value: `${summary.value.rupturePct.toFixed(2)}%`, subtext: 'Ruptura confirmada no fechamento', tone: getMetaTone(summary.value.rupturePct) },
     { label: 'Recuperação', value: `${summary.value.recoveryPct.toFixed(2)}%`, subtext: 'Redução sobre a ruptura inicial', tone: 'green' },
     { label: 'Itens recuperados', value: summary.value.recoveredItems.toLocaleString('pt-BR'), subtext: 'Diferença entre Presença e Ruptura', tone: 'slate' },
   ]
@@ -88,13 +102,13 @@ const operationalSummaryTiles = computed(() => auditType.value === 'Presença'
 const operationalExecution = computed(() => auditType.value === 'Presença'
   ? [
       { label: 'Presença', value: summary.value.readPct, color: 'bg-ink' },
-      { label: 'Ruptura', value: summary.value.pendingPct, color: 'bg-warn' },
+      { label: 'Ruptura', value: summary.value.pendingPct, color: toneBg[getMetaTone(summary.value.pendingPct)] },
       { label: 'Cobertura', value: summary.value.readPct, color: 'bg-good' },
       { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-steel' },
     ]
   : [
       { label: 'Presença final', value: summary.value.readPct, color: 'bg-ink' },
-      { label: 'Ruptura final', value: summary.value.rupturePct, color: 'bg-warn' },
+      { label: 'Ruptura final', value: summary.value.rupturePct, color: toneBg[getMetaTone(summary.value.rupturePct)] },
       { label: 'Recuperação', value: summary.value.recoveryPct, color: 'bg-good' },
       { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-steel' },
     ])
@@ -122,22 +136,6 @@ const storeStatusRows = computed(() => {
 const cancelledStoreCount = computed(() => storeStatusRows.value.filter((store) => store.isCancelled).length)
 const draftCancelledStoreCount = computed(() => cancellationDraftCodes.value.length)
 
-const normalizeHeader = (value) => String(value ?? '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-zA-Z0-9]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase()
-
-const findHeaderIndex = (headerRow, matchers) => {
-  for (const matcher of matchers) {
-    const index = headerRow.findIndex((name) => matcher(name))
-    if (index >= 0) return index
-  }
-  return -1
-}
-
 function getDayByIso(dateIso) {
   return currentWeek.value.find((day) => day.iso === dateIso) || currentWeek.value[0]
 }
@@ -154,13 +152,10 @@ async function cleanupDemoAudit() {
 }
 
 async function loadSessions() {
-  await cleanupDemoAudit()
   sessions.value = await listSessions(region.value.id)
 
   if (!selectedDay.value && currentWeek.value.length) {
-    const todayIso = new Date().toISOString().slice(0, 10)
-    const matchingDay = currentWeek.value.find((day) => day.iso === todayIso) || currentWeek.value[0]
-    selectedDay.value = matchingDay
+    selectedDay.value = pickDefaultDay()
   }
 
   if (selectedDay.value && sessions.value.length) {
@@ -171,183 +166,147 @@ async function loadSessions() {
   }
 }
 
-function parseSpreadSheetRows(file, selectedAuditType = 'Etiqueta') {
-  const workbook = XLSX.read(file, { type: 'array' })
-  const firstSheetName = workbook.SheetNames[0]
-  const sheet = workbook.Sheets[firstSheetName]
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-  if (!matrix.length) return []
+// ---------- Tabela por loja ----------
+const storeTableRows = computed(() => {
+  const rows = storeStatusRows.value.map((store) => ({
+    ...store,
+    displayName: formatStoreLabel(store.code, store.name, region.value.name),
+    totalSku: Number(store.totalSku || 0),
+    readPct: Number(store.readPct || 0),
+    pendingPct: Number(store.pendingPct || 0),
+    thirdPct: Number((auditType.value === 'Etiqueta' ? store.accuracyPct : auditType.value === 'Ruptura' ? store.recoveryPct : store.presencePct) || 0),
+  }))
+  const { key, dir } = tableSort.value
+  const factor = dir === 'asc' ? 1 : -1
+  return rows.sort((a, b) => {
+    if (a.isCancelled !== b.isCancelled) return a.isCancelled ? 1 : -1
+    if (key === 'code') return a.code.localeCompare(b.code) * factor
+    return (a[key] - b[key]) * factor
+  })
+})
 
-  const headerRow = matrix[0].map((value) => normalizeHeader(value))
-  const columnMap = {
-    tree: findHeaderIndex(headerRow, [(name) => name.includes('arvore') || name.includes('tree')]),
-    audit: findHeaderIndex(headerRow, [(name) => name.includes('auditado') || name.includes('audit')]),
-    total: findHeaderIndex(headerRow, [
-      (name) => name.includes('itenscomestoque') || (name.includes('itens') && name.includes('estoque')),
-      (name) => name.includes('itens com estoque'),
-    ]),
-    pending: findHeaderIndex(headerRow, [
-      (name) => name.includes('naolidascomestoque') || (name.includes('nao') && name.includes('lidas') && name.includes('estoque')),
-      (name) => name.includes('nao lidas com estoque') || name.includes('nao lidas'),
-    ]),
-    updated: findHeaderIndex(headerRow, [
-      (name) => name.includes('atualizadascomestoque') || (name.includes('atualizadas') && name.includes('estoque')),
-      (name) => name.includes('atualizadas com estoque') || name.includes('atualizadas'),
-    ]),
-    outdated: findHeaderIndex(headerRow, [
-      (name) => name.includes('desatualizadascomestoque') || name.includes('desatualizadas'),
-      (name) => name.includes('desatualizadas com estoque'),
-    ]),
-  }
+const tableColumns = computed(() => auditType.value === 'Etiqueta'
+  ? [
+      { key: 'totalSku', label: 'SKU' },
+      { key: 'readPct', label: 'Leitura' },
+      { key: 'pendingPct', label: 'Pendência' },
+      { key: 'thirdPct', label: 'Acertabilidade' },
+    ]
+  : [
+      { key: 'totalSku', label: 'SKU' },
+      { key: 'readPct', label: 'Presença' },
+      { key: 'pendingPct', label: 'Ruptura' },
+      { key: 'thirdPct', label: auditType.value === 'Ruptura' ? 'Recuperação' : 'Presença inicial' },
+    ])
 
-  return matrix
-    .slice(1)
-    .map((row) => {
-      if (!Array.isArray(row) || row.length < 5) return null
+const missingStoreCodes = computed(() => {
+  if (!activeSession.value) return []
+  const present = new Set((activeSession.value.stores || []).map((store) => store.code))
+  return storeCodes.value.filter((code) => !present.has(code))
+})
 
-      const treeCell = row[columnMap.tree] ?? ''
-      const nameCell = row[columnMap.audit] ?? row[1] ?? ''
-      const totalSku = parseNumeric(row[columnMap.total] ?? row[2])
-      const pendingItems = parseNumeric(row[columnMap.pending] ?? row[3])
-      const updatedItems = parseNumeric(row[columnMap.updated] ?? row[4])
-      const outdatedItems = parseNumeric(row[columnMap.outdated] ?? row[5])
-      const presenceItems = parseNumeric(row[3])
-      const ruptureItems = parseNumeric(row[4])
-
-      const codeFromTree = String(treeCell).match(/\b\d{3}\b/)
-      const codeFromName = String(nameCell).match(/\b\d{3}\b/)
-      const rawCode = codeFromTree ? codeFromTree[0] : codeFromName?.[0] ?? ''
-      const code = /^\d{3}$/.test(rawCode) ? rawCode : ''
-      const label = String(nameCell).trim()
-      const isAggregate = /regional|regiao|macro|sub-regiao|macro regional|regiao de venda/i.test(label)
-
-      if (!storeCodes.value.includes(code) || isAggregate) {
-        return null
-      }
-
-      if (selectedAuditType !== 'Etiqueta') {
-        return {
-          code,
-          name: label || undefined,
-          totalSku,
-          presenceItems,
-          ruptureItems: selectedAuditType === 'Presença' ? presenceItems : ruptureItems,
-        }
-      }
-
-      return {
-        code,
-        name: label || undefined,
-        totalSku,
-        pendingItems,
-        updatedItems,
-        outdatedItems,
-      }
-    })
-    .filter(Boolean)
-    .filter((row) => row.totalSku > 0 || row.pendingItems > 0 || row.updatedItems > 0 || row.outdatedItems > 0 || row.presenceItems > 0 || row.ruptureItems > 0)
+function sortTable(key) {
+  const current = tableSort.value
+  tableSort.value = current.key === key
+    ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: key === 'code' ? 'asc' : 'desc' }
 }
 
+function sortIcon(key) {
+  if (tableSort.value.key !== key) return 'fa-sort opacity-40'
+  return tableSort.value.dir === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'
+}
+
+// ---------- Reincidência: lojas fora da meta em semanas seguidas ----------
+function weekStartOf(iso) {
+  const date = new Date(`${iso}T00:00:00`)
+  const weekday = date.getDay() || 7
+  date.setDate(date.getDate() - (weekday - 1))
+  return toIsoDate(date)
+}
+
+const recurrence = computed(() => {
+  const session = activeSession.value
+  if (!session?.isoDate) return []
+  const type = session.auditType || 'Etiqueta'
+  // Última auditoria do mesmo tipo em cada semana, até a data da auditoria ativa.
+  const byWeek = {}
+  for (const item of sessions.value) {
+    if ((item.auditType || 'Etiqueta') !== type || !item.isoDate || item.isoDate > session.isoDate) continue
+    const week = weekStartOf(item.isoDate)
+    if (!byWeek[week] || item.isoDate > byWeek[week].isoDate) byWeek[week] = item
+  }
+  const weeks = Object.keys(byWeek).sort().reverse()
+  const result = []
+  for (const code of storeCodes.value) {
+    let streak = 0
+    let expected = weekStartOf(session.isoDate)
+    const values = []
+    for (const week of weeks) {
+      if (week !== expected) break
+      const store = (byWeek[week].stores || []).find((item) => item.code === code)
+      if (!store || isCancelledStore(store) || getMetaTone(store.pendingPct) === 'green') break
+      streak += 1
+      values.push(Number(store.pendingPct || 0))
+      const previous = new Date(`${week}T00:00:00`)
+      previous.setDate(previous.getDate() - 7)
+      expected = toIsoDate(previous)
+    }
+    if (streak >= 2) {
+      const name = (session.stores || []).find((item) => item.code === code)?.name
+      result.push({ code, name: formatStoreLabel(code, name, region.value.name), streak, current: values[0], oldest: values[values.length - 1] })
+    }
+  }
+  return result.sort((a, b) => b.streak - a.streak || b.current - a.current)
+})
+
+// ---------- Importação ----------
 async function handleUpload(file) {
-  if (!selectedDay.value) return
+  if (!selectedDay.value || isUploading.value) return
+  isUploading.value = true
+  try {
+    const day = getAuditDay(selectedDay.value.iso) || { ...selectedDay.value, weekStart: currentWeek.value[0]?.iso }
+    const auditType = day.activity || 'Etiqueta'
+    const { matrix } = await readSpreadsheet(file)
+    const rows = parseRows(matrix, auditType, storeCodes.value)
 
-  const selectedAuditType = selectedDay.value.activity || 'Etiqueta'
-  const rows = filterAllowedStoreRows(parseSpreadSheetRows(await file.arrayBuffer(), selectedAuditType), storeCodes.value)
-
-  if (!rows.length) {
-    const expectedColumns = selectedAuditType === 'Etiqueta'
-      ? 'Árvore, Itens com Estoque, Não Lidas com Estoque, Atualizadas com Estoque e Desatualizadas.'
-      : 'Árvore, Auditado em, Itens com Estoque, Ruptura 1ª e Ruptura Final.'
-    window.alert(`Nenhuma loja foi identificada. Verifique se a planilha contém os campos: ${expectedColumns}`)
-    return
-  }
-
-  const importedStores = rows.map((row) => {
-    if (selectedAuditType !== 'Etiqueta') {
-      const totalSku = Math.max(Number(row.totalSku || 0), 0)
-      const presenceItems = Math.min(Math.max(Number(row.presenceItems || 0), 0), totalSku)
-      const ruptureItems = Math.min(Math.max(Number(row.ruptureItems || 0), 0), totalSku)
-      const recoveredItems = Math.max(presenceItems - ruptureItems, 0)
-      const presentItems = Math.max(totalSku - ruptureItems, 0)
-      const presencePct = totalSku > 0 ? Number((((totalSku - presenceItems) / totalSku) * 100).toFixed(2)) : 0
-      const rupturePct = totalSku > 0 ? Number(((ruptureItems / totalSku) * 100).toFixed(2)) : 0
-      const recoveryPct = presenceItems > 0 ? Number(((recoveredItems / presenceItems) * 100).toFixed(2)) : 0
-
-      return {
-        code: row.code,
-        name: row.name,
-        totalSku,
-        pendingItems: ruptureItems,
-        updatedItems: presentItems,
-        outdatedItems: 0,
-        readPct: Number((100 - rupturePct).toFixed(2)),
-        pendingPct: rupturePct,
-        accuracyPct: selectedAuditType === 'Ruptura' ? recoveryPct : presencePct,
-        presenceItems,
-        ruptureItems,
-        recoveredItems,
-        presencePct,
-        rupturePct,
-        recoveryPct,
-      }
+    if (!rows.length) {
+      notify(`Nenhuma loja da ${region.value.name} foi encontrada nesta planilha. Confira se ela tem as colunas ${EXPECTED_COLUMNS[auditType]}.`, 'error', 9000)
+      return
     }
 
-    const metrics = normalizeStoreMetrics({
-      totalSku: row.totalSku,
-      pendingItems: row.pendingItems,
-      updatedItems: row.updatedItems,
-      outdatedItems: row.outdatedItems,
-    })
+    const previousSession = sessions.value.find((session) => session.isoDate === day.iso)
+    const payload = buildSessionPayload({ region: region.value, storeCodes: storeCodes.value, day, rows, fileName: file.name, previousSession })
+    if (previousSession && previousSession.id !== payload.id) await deleteSession(previousSession.id)
+    await upsertSession(payload)
+    isModalOpen.value = false
+    await loadSessions()
 
-    return {
-      code: row.code,
-      name: row.name,
-      totalSku: Number(metrics.totalSku || 0),
-      pendingItems: Number(metrics.pendingItems || 0),
-      updatedItems: Number(metrics.updatedItems || 0),
-      outdatedItems: Number(metrics.outdatedItems || 0),
-      readPct: Number(metrics.readPct || 0),
-      pendingPct: Number(metrics.pendingPct || 0),
-      accuracyPct: Number(metrics.accuracyPct || 0),
+    const missing = storeCodes.value.filter((code) => !rows.some((row) => row.code === code))
+    const action = previousSession ? 'Planilha substituída' : 'Planilha importada'
+    if (missing.length) {
+      notify(`${action}: ${rows.length} lojas. Não vieram na planilha: ${missing.join(', ')}.`, 'info', 9000)
+    } else {
+      notify(`${action}: todas as ${rows.length} lojas.`)
     }
-  })
-
-  const previousSession = sessions.value.find((session) => session.isoDate === selectedDay.value.iso)
-  const previouslyCancelledCodes = new Set(
-    (previousSession?.stores || []).filter((store) => isCancelledStore(store)).map((store) => store.code),
-  )
-  const normalizedStores = importedStores.map((store) => {
-    if (!previouslyCancelledCodes.has(store.code)) return store
-    return {
-      ...store,
-      cancelled: true,
-      isCancelled: true,
-      status: 'cancelada',
-    }
-  })
-
-  const payload = {
-    id: `${region.value.id}-${selectedDay.value.iso}-${selectedDay.value.key}`,
-    regionId: region.value.id,
-    region: region.value.name,
-    weekStart: currentWeek.value[0]?.iso,
-    dayKey: selectedDay.value.key,
-    dayLabel: selectedDay.value.label,
-    auditType: selectedAuditType,
-    isoDate: selectedDay.value.iso,
-    uploadedAt: new Date().toISOString(),
-    sourceFile: file.name,
-    stores: normalizedStores,
-    summary: summarizeStores(normalizedStores, storeCodes.value),
-    forecast: buildForecast(summarizeStores(normalizedStores, storeCodes.value)),
+  } catch (error) {
+    console.error(error)
+    notify('Não foi possível ler a planilha. Confira se o arquivo abre no Excel e não tem senha.', 'error', 8000)
+  } finally {
+    isUploading.value = false
   }
+}
 
-  if (previousSession) {
-    await deleteSession(previousSession.id)
-  }
-  await upsertSession(payload)
-  isModalOpen.value = false
+async function handleBatchImported(results) {
+  isBatchOpen.value = false
   await loadSessions()
+  const latest = [...results].sort((a, b) => b.iso.localeCompare(a.iso))[0]
+  if (latest) {
+    weekCursor.value = new Date(`${latest.iso}T00:00:00`)
+    selectedDay.value = currentWeek.value.find((day) => day.iso === latest.iso) || selectedDay.value
+  }
+  const replaced = results.filter((item) => item.replaced).length
+  notify(`${results.length} ${results.length === 1 ? 'planilha importada' : 'planilhas importadas'}${replaced ? `, ${replaced} ${replaced === 1 ? 'substituída' : 'substituídas'}` : ''}.`)
 }
 
 function openDay(day) {
@@ -401,6 +360,8 @@ async function saveStoreCancellations() {
   sessions.value = sessions.value.map((item) => (item.id === updatedSession.id ? updatedSession : item))
   await upsertSession(updatedSession)
   isStoreCancellationModalOpen.value = false
+  const count = cancellationDraftCodes.value.length
+  notify(count ? `${count} ${count === 1 ? 'loja fora' : 'lojas fora'} do resultado.` : 'Todas as lojas entram no resultado.')
 }
 
 async function deleteSelectedAudit() {
@@ -408,18 +369,39 @@ async function deleteSelectedAudit() {
   const session = sessions.value.find((item) => item.isoDate === selectedDay.value.iso)
   if (!session) return
 
+  const confirmed = await confirmAction({
+    title: 'Excluir esta auditoria?',
+    message: `${session.auditType || 'Etiqueta'} de ${String(session.dayLabel || '').toLowerCase()}, ${formatIsoDate(session.isoDate)}. Não dá para desfazer. Se precisar dos dados, exporte um backup antes.`,
+    confirmLabel: 'Excluir auditoria',
+  })
+  if (!confirmed) return
+
   await deleteSession(session.id)
   selectedDay.value = currentWeek.value.find((day) => day.iso === session.isoDate) || currentWeek.value[0]
   await loadSessions()
+  notify('Auditoria excluída.')
 }
 
 function moveWeek(delta) {
   const newDate = new Date(weekCursor.value)
   newDate.setDate(newDate.getDate() + delta * 7)
   weekCursor.value = newDate
-  const todayIso = new Date().toISOString().slice(0, 10)
-  const dayInWeek = currentWeek.value.find((day) => day.iso === todayIso) || currentWeek.value[0]
-  selectedDay.value = dayInWeek
+  selectedDay.value = pickDefaultDay()
+}
+
+function goToday() {
+  weekCursor.value = new Date()
+  selectedDay.value = pickDefaultDay()
+}
+
+// Hoje, quando é dia de auditoria; senão o último dia já passado da semana (com planilha, se houver).
+function pickDefaultDay() {
+  const todayIso = getTodayIso()
+  const exact = currentWeek.value.find((day) => day.iso === todayIso)
+  if (exact) return exact
+  const past = currentWeek.value.filter((day) => day.iso <= todayIso)
+  const loaded = [...past].reverse().find((day) => sessions.value.some((session) => session.isoDate === day.iso))
+  return loaded || past[past.length - 1] || currentWeek.value[0]
 }
 
 watch(
@@ -443,6 +425,7 @@ watch(
 )
 
 onMounted(async () => {
+  await cleanupDemoAudit()
   await loadSessions()
 })
 </script>
@@ -454,7 +437,12 @@ onMounted(async () => {
       title="Auditorias da semana"
       :description="storeCodes.length ? `Lojas acompanhadas: ${storeCodes.join(', ')}.` : 'A regional ainda não tem lojas cadastradas.'"
       :chips="[{ label: 'Lojas', value: storeCodes.length }, { label: 'Auditorias salvas', value: sessions.length }]"
-    />
+    >
+      <button v-if="storeCodes.length" type="button" class="ui-btn-secondary ml-1" @click="isBatchOpen = true">
+        <i class="fa-solid fa-copy text-sm" aria-hidden="true"></i>
+        Importar várias
+      </button>
+    </PageHeader>
 
     <div v-if="!storeCodes.length" class="setup-empty-state">
       <div class="setup-empty-icon"><i class="fa-solid fa-store" aria-hidden="true"></i></div>
@@ -472,6 +460,7 @@ onMounted(async () => {
       :week-label="weekLabel"
       @select-day="openDay"
       @move-week="moveWeek"
+      @go-today="goToday"
     />
 
     <div v-if="selectedSession" class="space-y-4">
@@ -497,7 +486,7 @@ onMounted(async () => {
 
       <div v-if="auditType === 'Etiqueta'" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard label="Leitura" :value="`${summary.readPct.toFixed(2)}%`" subtext="Itens lidos sobre o SKU total" />
-        <MetricCard label="Pendência" :value="`${summary.pendingPct.toFixed(2)}%`" subtext="Itens não lidos. Meta: até 3%" :tone="summary.pendingPct <= 3 ? 'green' : summary.pendingPct <= 7 ? 'orange' : 'red'" />
+        <MetricCard label="Pendência" :value="`${summary.pendingPct.toFixed(2)}%`" :subtext="`Itens não lidos. Meta: até ${formatLimit(settings.meta)}%`" :tone="getMetaTone(summary.pendingPct)" />
         <MetricCard label="Acertabilidade" :value="`${summary.accuracyPct.toFixed(2)}%`" subtext="Atualizados entre os lidos" />
         <MetricCard label="Itens lidos" :value="`${(summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR')}`" :subtext="`de ${summary.totalSku.toLocaleString('pt-BR')} no SKU`" />
       </div>
@@ -511,6 +500,26 @@ onMounted(async () => {
           :tone="card.tone"
         />
       </div>
+
+      <section v-if="recurrence.length" class="ui-card-alert p-5" aria-labelledby="recurrence-title">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 id="recurrence-title" class="ui-title !mt-0">
+            {{ recurrence.length === 1 ? 'Uma loja segue' : `${recurrence.length} lojas seguem` }} fora da meta há semanas
+          </h3>
+          <p class="text-[14px] text-steel">Auditorias de {{ auditType }} em semanas seguidas, até esta data</p>
+        </div>
+        <ul class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <li v-for="item in recurrence" :key="item.code" class="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+            <span class="min-w-0">
+              <span class="block truncate text-[15px] font-semibold text-ink" :title="item.name">{{ item.name }}</span>
+              <span class="block text-[13px] text-steel">
+                {{ item.streak }} semanas seguidas<template v-if="item.oldest !== item.current">, era {{ formatPct(item.oldest) }}</template>
+              </span>
+            </span>
+            <span class="font-display text-[22px] font-semibold" :class="toneClass[getMetaTone(item.current)]">{{ formatPct(item.current) }}</span>
+          </li>
+        </ul>
+      </section>
 
       <div class="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
         <section class="ui-card p-5">
@@ -547,7 +556,7 @@ onMounted(async () => {
             <div v-for="bar in [
               { label: 'Leitura', value: summary.readPct, color: 'bg-ink' },
               { label: 'Acertabilidade', value: summary.accuracyPct, color: 'bg-steel' },
-              { label: 'Pendência', value: summary.pendingPct, color: summary.pendingPct <= 3 ? 'bg-good' : summary.pendingPct <= 7 ? 'bg-warn' : 'bg-bad' },
+              { label: 'Pendência', value: summary.pendingPct, color: toneBg[getMetaTone(summary.pendingPct)] },
             ]" :key="bar.label">
               <div class="flex items-baseline justify-between text-[15px]">
                 <span class="font-medium text-steel">{{ bar.label }}</span>
@@ -587,6 +596,48 @@ onMounted(async () => {
         </span>
       </button>
 
+      <section class="ui-card p-5" aria-labelledby="store-table-title">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 id="store-table-title" class="ui-title !mt-0">Resultado por loja</h3>
+          <p class="text-[14px] text-steel">Clique no nome da coluna para ordenar</p>
+        </div>
+        <div class="mt-3 overflow-x-auto">
+          <table class="w-full min-w-[620px] text-left">
+            <thead class="ui-table-head">
+              <tr>
+                <th class="px-3 py-2.5" :aria-sort="tableSort.key === 'code' ? (tableSort.dir === 'asc' ? 'ascending' : 'descending') : 'none'">
+                  <button type="button" class="inline-flex items-center gap-1.5 hover:text-ink" @click="sortTable('code')">
+                    Loja <i class="fa-solid text-[11px]" :class="sortIcon('code')" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th v-for="column in tableColumns" :key="column.key" class="px-3 py-2.5 text-right" :aria-sort="tableSort.key === column.key ? (tableSort.dir === 'asc' ? 'ascending' : 'descending') : 'none'">
+                  <button type="button" class="inline-flex items-center gap-1.5 hover:text-ink" @click="sortTable(column.key)">
+                    {{ column.label }} <i class="fa-solid text-[11px]" :class="sortIcon(column.key)" aria-hidden="true"></i>
+                  </button>
+                </th>
+                <th class="px-3 py-2.5">Situação</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line text-[15px]">
+              <tr v-for="row in storeTableRows" :key="row.code" class="hover:bg-floor/50" :class="{ 'text-steel': row.isCancelled }">
+                <td class="max-w-[260px] truncate whitespace-nowrap px-3 py-2.5 font-semibold" :title="row.name">{{ row.displayName }}</td>
+                <td class="px-3 py-2.5 text-right">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
+                <td class="px-3 py-2.5 text-right">{{ formatPct(row.readPct) }}</td>
+                <td class="px-3 py-2.5 text-right font-semibold" :class="row.isCancelled ? '' : toneClass[getMetaTone(row.pendingPct)]">{{ formatPct(row.pendingPct) }}</td>
+                <td class="px-3 py-2.5 text-right">{{ formatPct(row.thirdPct) }}</td>
+                <td class="px-3 py-2.5">
+                  <span v-if="row.isCancelled" class="ui-badge ui-badge-mute">Cancelada</span>
+                  <span v-else class="ui-badge" :class="toneBadge[getMetaTone(row.pendingPct)]">{{ toneLabel[getMetaTone(row.pendingPct)] }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="missingStoreCodes.length" class="mt-3 text-[14px] text-steel">
+          Sem dados nesta planilha: {{ missingStoreCodes.join(', ') }}.
+        </p>
+      </section>
+
       <StoreTowerChart
         :stores="selectedChartStores"
         :regional-summary="selectedChartSummary"
@@ -613,8 +664,17 @@ onMounted(async () => {
     </div>
 
     <div v-if="isModalOpen && selectedDay" class="relative">
-      <UploadModal :regional-name="region.name" :audit-type="selectedDay.activity" :is-update="Boolean(selectedSession)" @close="isModalOpen = false" @upload="handleUpload" />
+      <UploadModal :regional-name="region.name" :audit-type="selectedDay.activity" :is-update="Boolean(selectedSession)" :busy="isUploading" @close="isModalOpen = false" @upload="handleUpload" />
     </div>
+
+    <BatchImportModal
+      v-if="isBatchOpen"
+      :region="region"
+      :store-codes="storeCodes"
+      :sessions="sessions"
+      @close="isBatchOpen = false"
+      @imported="handleBatchImported"
+    />
 
     <div v-if="isStoreCancellationModalOpen" class="fixed inset-0 z-40 flex items-end justify-center bg-ink/50 p-3 sm:items-center sm:p-4" @click.self="isStoreCancellationModalOpen = false">
       <div class="ui-modal max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="cancel-title">

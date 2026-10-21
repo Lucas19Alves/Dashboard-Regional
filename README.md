@@ -29,13 +29,24 @@ Este projeto foi pensado para apoiar o acompanhamento operacional da Regional SP
 - filtros por loja;
 - ranking por desempenho;
 - métricas principais em cards;
-- projeção de fechamento da auditoria.
+- projeção de fechamento da auditoria;
+- tabela de resultado por loja com ordenação;
+- alerta de lojas fora da meta em semanas seguidas;
+- importação de várias planilhas de uma vez (data lida da planilha ou do nome do arquivo);
+- confirmação antes de excluir e avisos na tela após cada ação.
 
 ### Relatórios
 - comparação de lojas por pendência, leitura e acertabilidade;
 - seleção por período;
 - séries históricas por data;
-- identificação de destaque e desempenho relativo.
+- identificação de destaque e desempenho relativo;
+- mini gráfico de evolução por loja no ranking;
+- ranking em Excel e imagens em alta resolução.
+
+### Configurações
+- lojas de cada regional;
+- meta e limite de atenção (padrão 3% e 7%);
+- tema claro, escuro ou igual ao sistema.
 
 ### Backup e histórico
 - exportação do histórico em JSON;

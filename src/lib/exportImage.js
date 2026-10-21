@@ -1,6 +1,27 @@
 import { toPng } from 'html-to-image'
 
-export async function exportCardAsPng(element, fileName, options = {}) {
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+// As imagens saem sempre no tema claro, para ficarem iguais em qualquer tela ou impressão.
+export async function withLightTheme(task) {
+  const root = document.documentElement
+  const wasDark = root.classList.contains('dark')
+  if (wasDark) {
+    root.classList.remove('dark')
+    await nextFrame()
+  }
+  try {
+    return await task()
+  } finally {
+    if (wasDark) root.classList.add('dark')
+  }
+}
+
+export function exportCardAsPng(element, fileName, options = {}) {
+  return withLightTheme(() => renderCardAsPng(element, fileName, options))
+}
+
+async function renderCardAsPng(element, fileName, options = {}) {
   if (!element || !(element instanceof HTMLElement)) {
     return
   }
