@@ -13,6 +13,7 @@ import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
 import { formatLimit, getMetaTone, settings } from '../lib/settings'
 import { notify, confirmAction } from '../composables/feedback'
+import { markChange } from '../lib/backup'
 import { useModal } from '../composables/useModal'
 
 const route = useRoute()
@@ -279,11 +280,12 @@ async function handleUpload(file) {
     const payload = buildSessionPayload({ region: region.value, storeCodes: storeCodes.value, day, rows, fileName: file.name, previousSession })
     if (previousSession && previousSession.id !== payload.id) await deleteSession(previousSession.id)
     await upsertSession(payload)
+    markChange(region.value.id, 1)
     isModalOpen.value = false
     await loadSessions()
 
     const missing = storeCodes.value.filter((code) => !rows.some((row) => row.code === code))
-    const action = previousSession ? 'Planilha substituída' : 'Planilha importada'
+    const action = previousSession ? 'Dados atualizados' : 'Planilha importada'
     if (missing.length) {
       notify(`${action}: ${rows.length} lojas. Não vieram na planilha: ${missing.join(', ')}.`, 'info', 9000)
     } else {
@@ -299,6 +301,7 @@ async function handleUpload(file) {
 
 async function handleBatchImported(results) {
   isBatchOpen.value = false
+  markChange(region.value.id, Math.max(results.length, 3))
   await loadSessions()
   const latest = [...results].sort((a, b) => b.iso.localeCompare(a.iso))[0]
   if (latest) {
@@ -306,7 +309,7 @@ async function handleBatchImported(results) {
     selectedDay.value = currentWeek.value.find((day) => day.iso === latest.iso) || selectedDay.value
   }
   const replaced = results.filter((item) => item.replaced).length
-  notify(`${results.length} ${results.length === 1 ? 'planilha importada' : 'planilhas importadas'}${replaced ? `, ${replaced} ${replaced === 1 ? 'substituída' : 'substituídas'}` : ''}.`)
+  notify(`${results.length} ${results.length === 1 ? 'planilha importada' : 'planilhas importadas'}${replaced ? `, ${replaced} com dados atualizados` : ''}.`)
 }
 
 function openDay(day) {
@@ -359,6 +362,7 @@ async function saveStoreCancellations() {
 
   sessions.value = sessions.value.map((item) => (item.id === updatedSession.id ? updatedSession : item))
   await upsertSession(updatedSession)
+  markChange(region.value.id, 1)
   isStoreCancellationModalOpen.value = false
   const count = cancellationDraftCodes.value.length
   notify(count ? `${count} ${count === 1 ? 'loja fora' : 'lojas fora'} do resultado.` : 'Todas as lojas entram no resultado.')
@@ -377,6 +381,7 @@ async function deleteSelectedAudit() {
   if (!confirmed) return
 
   await deleteSession(session.id)
+  markChange(region.value.id, 3)
   selectedDay.value = currentWeek.value.find((day) => day.iso === session.isoDate) || currentWeek.value[0]
   await loadSessions()
   notify('Auditoria excluída.')
@@ -474,9 +479,9 @@ onMounted(async () => {
           </p>
         </div>
         <div class="flex gap-2">
-          <button type="button" class="ui-btn-secondary" @click="openUpdateForSelectedDay">
-            <i class="fa-solid fa-arrows-rotate text-sm" aria-hidden="true"></i>
-            Substituir planilha
+          <button type="button" class="ui-btn-update" @click="openUpdateForSelectedDay">
+            <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            Atualizar dados
           </button>
           <button type="button" class="ui-btn-danger" @click="deleteSelectedAudit">
             Excluir
@@ -647,6 +652,7 @@ onMounted(async () => {
         :metric-title="auditType === 'Etiqueta' ? 'Pendência por loja' : 'Ruptura por loja'"
         :primary-label="auditType === 'Etiqueta' ? 'Pendência' : 'Ruptura'"
         :secondary-label="auditType === 'Ruptura' ? 'Recuperação' : auditType === 'Presença' ? 'Presença' : 'Acertabilidade'"
+        :export-context="`${auditType} de ${String(selectedSession.dayLabel || '').toLowerCase()}, ${formatIsoDate(selectedSession.isoDate)}`"
         @update:selected-codes="selectedChartCodes = $event"
       />
     </div>

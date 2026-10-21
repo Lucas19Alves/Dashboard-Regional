@@ -1,7 +1,8 @@
 <script setup>
 import PageHeader from '../components/PageHeader.vue'
 import { computed, onMounted, ref } from 'vue'
-import { exportSessionsAsJson, importSessionsFromJson, listSessions } from '../lib/database'
+import { importSessionsFromJson, listSessions } from '../lib/database'
+import { downloadBackup, lastBackupLabel } from '../lib/backup'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
 
@@ -59,15 +60,8 @@ async function loadSessions() {
 }
 
 async function exportBackup() {
-  const payload = await exportSessionsAsJson(region.value.id)
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `regional-${region.value.id}-backup-${new Date().toISOString().slice(0, 10)}.json`
-  link.click()
-  URL.revokeObjectURL(url)
-  statusText.value = 'Backup exportado.'
+  const count = await downloadBackup(region.value)
+  statusText.value = `Backup exportado com ${count} ${count === 1 ? 'auditoria' : 'auditorias'}.`
 }
 
 async function importBackup(event) {
@@ -103,7 +97,7 @@ onMounted(async () => {
     <div class="grid gap-4 lg:grid-cols-2">
       <section class="ui-card flex flex-col p-6">
         <h2 class="ui-title !mt-0">Exportar</h2>
-        <p class="mt-2 flex-1 text-[15px] leading-6 text-steel">Baixa um arquivo .json com todas as auditorias da {{ region.name }}.</p>
+        <p class="mt-2 flex-1 text-[15px] leading-6 text-steel">Baixa um arquivo .json com todas as auditorias da {{ region.name }}. {{ lastBackupLabel(region.id) }}</p>
         <div class="mt-5">
           <button type="button" class="ui-btn-primary" @click="exportBackup">
             <i class="fa-solid fa-download text-sm" aria-hidden="true"></i>
