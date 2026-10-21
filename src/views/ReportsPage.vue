@@ -1,6 +1,8 @@
 <script setup>
 import PageHeader from '../components/PageHeader.vue'
 import MetricCard from '../components/MetricCard.vue'
+import { formatLimit, getAttention, getMetaTone, settings } from '../lib/settings'
+import { notify } from '../composables/feedback'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { toPng } from 'html-to-image'
 import { listSessions } from '../lib/database'
@@ -24,7 +26,9 @@ const sortMode = ref('pending')
 const selectedAuditType = ref('Etiqueta')
 const selectedStatus = ref('todas')
 const auditTypes = REPORT_TYPES
-const metaThreshold = 3
+const metaThreshold = computed(() => settings.meta)
+const attentionLimit = computed(() => getAttention())
+const isExportingExcel = ref(false)
 const quickRanges = [7, 15, 30, 60]
 
 function toIsoDateLocal(date) {
@@ -114,12 +118,12 @@ const storeTrendSeries = computed(() => {
         }
       }).filter((item) => item.isoDate),
     }
-  })
+  }).filter((series) => series.points.some((point) => point.totalSku > 0))
 })
 
 const chartSeries = computed(() => [{
   code: 'Regional',
-  color: '#1B2430',
+  color: 'rgb(var(--c-ink))',
   isRegional: true,
   points: regionalTrendSeries.value,
 }, ...storeTrendSeries.value.map((series) => ({ ...series, isRegional: false }))])
@@ -226,8 +230,8 @@ const insights = computed(() => {
     return (finalB - initialB) - (finalA - initialA)
   })[0]
 
-  const withinMetaStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) <= metaThreshold).length
-  const riskStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) > metaThreshold).length
+  const withinMetaStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) <= metaThreshold.value).length
+  const riskStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) > metaThreshold.value).length
   const recoveryRate = storeTrendSeries.value.length ? (withinMetaStores / storeTrendSeries.value.length) * 100 : 0
 
   return [
@@ -255,7 +259,7 @@ const insights = computed(() => {
     {
       title: 'Cobertura da meta',
       tone: recoveryRate >= 60 ? 'positive' : 'warning',
-      body: `${withinMetaStores} de ${storeTrendSeries.value.length || 0} lojas estão dentro da meta de 3% pendente. ${riskStores} lojas ainda exigem atenção para evitar perda de ritmo.`,
+      body: `${withinMetaStores} de ${storeTrendSeries.value.length || 0} lojas estão dentro da meta de ${formatLimit(metaThreshold.value)}%. ${riskStores} ${riskStores === 1 ? 'loja ainda exige' : 'lojas ainda exigem'} atenção.`,
     },
   ]
 })
@@ -284,6 +288,79 @@ function formatDelta(metric) {
   if (!metric.hasPrevious) return '—'
   const sign = metric.delta > 0 ? '+' : ''
   return metric.format === 'pct' ? `${sign}${metric.delta.toFixed(2)} p.p.` : `${sign}${metric.delta.toLocaleString('pt-BR')}`
+}
+
+// ---------- Mini gráfico de evolução por loja (pendência/ruptura em cada auditoria do período) ----------
+const SPARK_W = 96
+const SPARK_H = 26
+
+const sparklines = computed(() => {
+  const result = {}
+  const stores = report.value.trend?.stores || []
+  const allValues = stores.flatMap((series) => series.points.filter(Boolean).map((point) => point.pendingPct))
+  const top = Math.max(metaThreshold.value * 2, ...allValues, 1)
+  const yOf = (value) => SPARK_H - 2 - (Math.min(value, top) / top) * (SPARK_H - 4)
+  for (const series of stores) {
+    const values = series.points.filter(Boolean).map((point) => point.pendingPct)
+    if (values.length < 2) continue
+    const step = SPARK_W / (values.length - 1)
+    const coords = values.map((value, index) => ({ x: Number((index * step).toFixed(1)), y: Number(yOf(value).toFixed(1)) }))
+    const lastValue = values[values.length - 1]
+    result[series.code] = {
+      points: coords.map((point) => `${point.x},${point.y}`).join(' '),
+      last: coords[coords.length - 1],
+      metaY: Number(yOf(metaThreshold.value).toFixed(1)),
+      tone: getMetaTone(lastValue),
+      label: `${reportLabels.value.pending} em ${values.length} auditorias: de ${values[0].toFixed(2)}% para ${lastValue.toFixed(2)}%`,
+    }
+  }
+  return result
+})
+
+// ---------- Excel do ranking ----------
+async function exportRankingExcel() {
+  if (!rankedStores.value.length || isExportingExcel.value) return
+  isExportingExcel.value = true
+  try {
+    const XLSX = await import('xlsx')
+    const labels = reportLabels.value
+    const rows = rankedStores.value.map((row, index) => ({
+      Posição: row.hasData ? index + 1 : '',
+      Loja: row.code,
+      Nome: row.name || '',
+      SKU: row.hasData ? row.totalSku : '',
+      [labels.read]: row.hasData ? Number(row.readPct.toFixed(2)) : '',
+      [labels.pending]: row.hasData ? Number(row.pendingPct.toFixed(2)) : '',
+      [labels.accuracy]: row.hasData ? Number(row.thirdPct.toFixed(2)) : '',
+      [labels.moved]: row.hasData ? row.movedItems : '',
+      Cancelamentos: row.cancellationCount,
+      Situação: row.hasData ? { green: 'Na meta', orange: 'Atenção', red: 'Fora da meta' }[getMetaTone(row.pendingPct)] : 'Sem auditoria válida',
+    }))
+    rows.push({
+      Posição: '',
+      Loja: 'Regional',
+      Nome: region.value.name,
+      SKU: regionalSummary.value.totalSku,
+      [labels.read]: Number(regionalSummary.value.readPct.toFixed(2)),
+      [labels.pending]: Number(regionalSummary.value.pendingPct.toFixed(2)),
+      [labels.accuracy]: Number(regionalSummary.value.thirdPct.toFixed(2)),
+      [labels.moved]: '',
+      Cancelamentos: cancellationCount.value,
+      Situação: { green: 'Na meta', orange: 'Atenção', red: 'Fora da meta' }[getMetaTone(regionalSummary.value.pendingPct)],
+    })
+    const sheet = XLSX.utils.json_to_sheet(rows)
+    sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 34 }, { wch: 9 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 13 }, { wch: 14 }, { wch: 20 }]
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, selectedAuditType.value.slice(0, 31))
+    const period = startDate.value || endDate.value ? `${startDate.value || 'inicio'}-a-${endDate.value || 'fim'}` : 'historico'
+    XLSX.writeFile(workbook, `ranking-${slug(region.value.code)}-${slug(selectedAuditType.value)}-${period}.xlsx`)
+    notify('Planilha do ranking baixada.')
+  } catch (error) {
+    console.error(error)
+    notify('Não foi possível gerar a planilha. Tente de novo.', 'error')
+  } finally {
+    isExportingExcel.value = false
+  }
 }
 
 // ---------- Imagens em alta resolução (1920×1080, exportadas em 2x = 3840×2160) ----------
@@ -320,7 +397,7 @@ async function exportSnapshot(type) {
     // Navegadores com limite de canvas menor caem para escalas menores.
     for (const pixelRatio of [2, 1.5, 1]) {
       try {
-        url = await toPng(node, { pixelRatio, width: 1920, height: 1080, backgroundColor: '#f1f5f9', cacheBust: true })
+        url = await toPng(node, { pixelRatio, width: 1920, height: 1080, backgroundColor: '#ECEEF1', cacheBust: true })
       } catch {
         url = ''
       }
@@ -504,7 +581,7 @@ onMounted(async () => {
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <MetricCard label="Auditorias" :value="auditCount" />
       <MetricCard :label="reportLabels.read" :value="`${regionalSummary.readPct.toFixed(2)}%`" />
-      <MetricCard :label="reportLabels.pending" :value="`${regionalSummary.pendingPct.toFixed(2)}%`" subtext="Meta: até 3%" :tone="regionalSummary.pendingPct <= metaThreshold ? 'green' : regionalSummary.pendingPct <= 7 ? 'orange' : 'red'" />
+      <MetricCard :label="reportLabels.pending" :value="`${regionalSummary.pendingPct.toFixed(2)}%`" :subtext="`Meta: até ${formatLimit(metaThreshold)}%`" :tone="getMetaTone(regionalSummary.pendingPct)" />
       <MetricCard :label="reportLabels.accuracy" :value="`${regionalSummary.thirdPct.toFixed(2)}%`" />
       <MetricCard label="Lojas canceladas" :value="cancellationCount" :tone="cancellationCount ? 'red' : 'default'" subtext="Somadas no período" />
     </div>
@@ -602,7 +679,7 @@ onMounted(async () => {
             <i class="fa-solid fa-download"></i>
             Salvar imagem
           </button>
-          <span class="ui-badge ui-badge-mute">Meta de pendência: {{ metaThreshold }}%</span>
+          <span class="ui-badge ui-badge-mute">Meta: {{ formatLimit(metaThreshold) }}%</span>
         </div>
       </div>
 
@@ -619,19 +696,19 @@ onMounted(async () => {
               </filter>
             </defs>
             <g>
-              <line x1="36" y1="194" x2="604" y2="194" stroke="#cbd5e1" stroke-width="1" />
-              <line x1="36" y1="36" x2="604" y2="36" stroke="#e2e8f0" stroke-width="1" />
-              <line x1="36" y1="115" x2="604" y2="115" stroke="#e2e8f0" stroke-width="1" />
-              <line x1="36" y1="194" x2="36" y2="36" stroke="#cbd5e1" stroke-width="1" />
+              <line x1="36" y1="194" x2="604" y2="194" class="stroke-line-strong" stroke-width="1" />
+              <line x1="36" y1="36" x2="604" y2="36" class="stroke-line" stroke-width="1" />
+              <line x1="36" y1="115" x2="604" y2="115" class="stroke-line" stroke-width="1" />
+              <line x1="36" y1="194" x2="36" y2="36" class="stroke-line-strong" stroke-width="1" />
             </g>
 
             <g>
-              <text x="16" y="198" fill="#64748b" font-size="13">0%</text>
-              <text x="6" y="40" fill="#64748b" font-size="13">100%</text>
+              <text x="16" y="198" class="fill-steel" font-size="13">0%</text>
+              <text x="6" y="40" class="fill-steel" font-size="13">100%</text>
             </g>
 
             <g v-if="hoveredTrendIndex !== null && currentHoverDate">
-              <line :x1="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y1="36" :x2="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y2="194" stroke="#64748b" stroke-dasharray="4 6" stroke-width="1" />
+              <line :x1="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y1="36" :x2="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y2="194" class="stroke-steel" stroke-dasharray="4 6" stroke-width="1" />
             </g>
 
             <path v-if="chartPoints[0]?.points?.length" :d="getAreaPath(chartPoints[0].points)" fill="url(#regionalArea)" />
@@ -641,12 +718,17 @@ onMounted(async () => {
               :key="`${series.code}-line`"
               :d="getLinePath(series.points)"
               fill="none"
-              :stroke="series.color"
-              stroke-width="2.5"
+              :style="{ stroke: series.color }"
+              :stroke-width="series.isRegional ? 3 : 2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              filter="url(#lineGlow)"
             />
+
+            <g v-if="trendDates.length <= 15">
+              <template v-for="series in chartPoints" :key="`${series.code}-dots`">
+                <circle v-for="(point, index) in series.points" :key="index" :cx="point.x" :cy="point.y" :r="series.isRegional ? 3.5 : 2.5" :style="{ fill: series.color }" />
+              </template>
+            </g>
 
             <g v-if="hoveredTrendIndex !== null && currentHoverDate">
               <circle
@@ -655,14 +737,14 @@ onMounted(async () => {
                 :cx="series.points[hoveredTrendIndex]?.x ?? 0"
                 :cy="series.points[hoveredTrendIndex]?.y ?? 0"
                 r="4.5"
-                :fill="series.color"
-                stroke="#ffffff"
+                :style="{ fill: series.color }"
+                class="stroke-paper"
                 stroke-width="2"
               />
             </g>
 
             <g>
-              <text v-for="date in trendDates" :key="`${date.isoDate}-label`" :x="36 + (trendDates.indexOf(date) * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y="216" fill="#64748b" font-size="13" font-weight="600" text-anchor="middle">
+              <text v-for="date in trendDates" :key="`${date.isoDate}-label`" :x="36 + (trendDates.indexOf(date) * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y="216" class="fill-steel" font-size="12" font-weight="600" text-anchor="middle">
                 {{ date.label }}
               </text>
             </g>
@@ -710,6 +792,11 @@ onMounted(async () => {
     <div class="ui-card p-5">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <h2 class="ui-title !mt-0">Ranking por loja</h2>
+        <div class="flex flex-wrap items-center gap-3">
+        <button type="button" class="ui-btn-soft" :disabled="!rankedStores.length || isExportingExcel" @click="exportRankingExcel">
+          <i :class="isExportingExcel ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-file-excel'" aria-hidden="true"></i>
+          Baixar Excel
+        </button>
         <label class="flex items-center gap-2 text-[14px] font-medium text-steel">
           Ordenar por
           <select v-model="sortMode" class="ui-input !w-auto !py-0">
@@ -720,6 +807,7 @@ onMounted(async () => {
             <option value="name">Loja</option>
           </select>
         </label>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
@@ -730,6 +818,7 @@ onMounted(async () => {
               <th class="px-4 py-3">SKU</th>
               <th class="px-4 py-3">{{ reportLabels.read }}</th>
               <th class="px-4 py-3">{{ reportLabels.pending }}</th>
+              <th class="px-4 py-3">Evolução</th>
               <th class="px-4 py-3">{{ reportLabels.accuracy }}</th>
               <th class="px-4 py-3">{{ reportLabels.moved }}</th>
               <th class="px-4 py-3">Cancelamentos</th>
@@ -743,11 +832,19 @@ onMounted(async () => {
               <template v-if="row.hasData">
                 <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
                 <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
-                <td class="px-4 py-3 font-semibold" :class="row.pendingPct <= metaThreshold ? 'text-good' : row.pendingPct <= 7 ? 'text-warn' : 'text-bad'">{{ row.pendingPct.toFixed(2) }}%</td>
+                <td class="px-4 py-3 font-semibold" :class="{ green: 'text-good', orange: 'text-warn', red: 'text-bad' }[getMetaTone(row.pendingPct)]">{{ row.pendingPct.toFixed(2) }}%</td>
+                <td class="px-4 py-2">
+                  <svg v-if="sparklines[row.code]" :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`" :width="SPARK_W" :height="SPARK_H" class="block overflow-visible" role="img" :aria-label="sparklines[row.code].label">
+                    <line x1="0" :x2="SPARK_W" :y1="sparklines[row.code].metaY" :y2="sparklines[row.code].metaY" class="stroke-line-strong" stroke-dasharray="2 3" />
+                    <polyline :points="sparklines[row.code].points" fill="none" class="stroke-steel" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+                    <circle :cx="sparklines[row.code].last.x" :cy="sparklines[row.code].last.y" r="3" :class="{ green: 'fill-good', orange: 'fill-warn', red: 'fill-bad' }[sparklines[row.code].tone]" />
+                  </svg>
+                  <span v-else class="text-[13px] text-steel">—</span>
+                </td>
                 <td class="px-4 py-3">{{ row.thirdPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3">{{ row.movedItems.toLocaleString('pt-BR') }}</td>
               </template>
-              <td v-else colspan="5" class="px-4 py-3 text-[14px] text-steel">Sem auditoria válida no período</td>
+              <td v-else colspan="6" class="px-4 py-3 text-[14px] text-steel">Sem auditoria válida no período</td>
               <td class="px-4 py-3"><span class="ui-badge" :class="row.cancellationCount ? 'ui-badge-bad' : 'ui-badge-mute'">{{ row.cancellationCount }}</span></td>
             </tr>
           </tbody>

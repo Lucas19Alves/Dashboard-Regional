@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { META_THRESHOLD } from '../lib/reportData'
+import { formatLimit, getAttention, settings } from '../lib/settings'
 
 // Painel 1920×1080 (16:9) usado só para exportar a imagem em alta resolução.
 const props = defineProps({
@@ -13,7 +13,8 @@ const props = defineProps({
 
 const WIDTH = 1920
 const HEIGHT = 1080
-const meta = META_THRESHOLD
+const meta = settings.meta
+const attention = getAttention()
 
 const labels = computed(() => props.report.labels)
 const totals = computed(() => props.report.totals)
@@ -39,7 +40,7 @@ function deltaTone(metric) {
 
 function pendingTone(value) {
   if (value <= meta) return 'tone-good'
-  if (value <= 7) return 'tone-warn'
+  if (value <= attention) return 'tone-warn'
   return 'tone-bad'
 }
 
@@ -59,7 +60,7 @@ const barTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({ ratio,
 function barClass(row) {
   if (row.isRegional) return 'bar-regional'
   if (row.pendingPct <= meta) return 'bar-good'
-  if (row.pendingPct <= 7) return 'bar-warning'
+  if (row.pendingPct <= attention) return 'bar-warning'
   return 'bar-danger'
 }
 const barHeight = (row) => Math.min((Math.max(row.pendingPct, 0) / barScale.value) * 100, 100)
@@ -128,9 +129,9 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
               <h2>{{ labels.chart }}</h2>
             </div>
             <div class="legend">
-              <span><i class="dot dot-good"></i>Até 3%</span>
-              <span><i class="dot dot-warn"></i>3% a 7%</span>
-              <span><i class="dot dot-bad"></i>Acima de 7%</span>
+              <span><i class="dot dot-good"></i>Até {{ formatLimit(meta) }}%</span>
+              <span><i class="dot dot-warn"></i>{{ formatLimit(meta) }}% a {{ formatLimit(attention) }}%</span>
+              <span><i class="dot dot-bad"></i>Acima de {{ formatLimit(attention) }}%</span>
               <span class="muted">Escala: {{ barScale }}%</span>
             </div>
           </div>
@@ -141,7 +142,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
             </div>
             <div class="plot">
               <div v-for="tick in barTicks" :key="`g-${tick.ratio}`" class="grid-line" :style="{ bottom: `${tick.ratio * 100}%` }" />
-              <div class="target-line" :style="{ bottom: `${(meta / barScale) * 100}%` }"><span>Meta {{ meta }}%</span></div>
+              <div class="target-line" :style="{ bottom: `${(meta / barScale) * 100}%` }"><span>Meta {{ formatLimit(meta) }}%</span></div>
               <div class="bars" :style="{ gridTemplateColumns: `repeat(${barRows.length}, 1fr)` }">
                 <div v-for="row in barRows" :key="row.code" class="bar-col" :class="{ 'bar-col-regional': row.isRegional }">
                   <div class="bar-stage">
@@ -251,7 +252,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
             </tr>
           </tbody>
         </table>
-        <p class="footnote">Gerado em {{ generatedAt }}. Meta de pendência: {{ meta }}%.</p>
+        <p class="footnote">Gerado em {{ generatedAt }}. Meta: {{ formatLimit(meta) }}%.</p>
       </section>
     </div>
   </div>

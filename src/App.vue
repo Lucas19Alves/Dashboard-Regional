@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
 import { getRegion } from './lib/regions'
+import { applyTheme } from './lib/settings'
+import { toasts, dismissToast, confirmState, settleConfirm } from './composables/feedback'
+import { useModal } from './composables/useModal'
 
 const isInfoModalOpen = ref(false)
 const installPrompt = ref(null)
@@ -30,6 +33,16 @@ function openInfo() {
 
 function closeInfo() {
   isInfoModalOpen.value = false
+}
+
+useModal(closeInfo, () => isInfoModalOpen.value)
+useModal(() => settleConfirm(false), () => confirmState.open)
+applyTheme()
+
+const toastIcons = {
+  success: 'fa-solid fa-circle-check',
+  error: 'fa-solid fa-circle-exclamation',
+  info: 'fa-solid fa-circle-info',
 }
 
 function captureInstallPrompt(event) {
@@ -76,6 +89,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureI
             <i class="fa-solid fa-download" aria-hidden="true"></i>
             <span>Instalar app</span>
           </button>
+          <RouterLink to="/configuracoes" class="icon-btn" aria-label="Configurações" title="Configurações" active-class="icon-btn-active">
+            <i class="fa-solid fa-gear" aria-hidden="true"></i>
+          </RouterLink>
           <button type="button" class="icon-btn" aria-label="Sobre o projeto" title="Sobre o projeto" @click="openInfo()">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
           </button>
@@ -84,7 +100,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureI
     </header>
 
     <main class="content-panel">
-      <RouterView />
+      <RouterView :key="String(route.params.region || '')" />
     </main>
 
     <nav v-if="isRegionalArea" class="bottom-navbar" aria-label="Navegação principal">
@@ -95,7 +111,32 @@ onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureI
     </nav>
   </div>
 
-  <div v-if="isInfoModalOpen" class="modal-backdrop" @click.self="closeInfo()" @keydown.esc="closeInfo()">
+  <div class="toast-stack" aria-live="polite">
+    <TransitionGroup name="toast">
+      <div v-for="toast in toasts" :key="toast.id" class="toast" :class="`toast-${toast.tone}`" role="status">
+        <i :class="toastIcons[toast.tone] || toastIcons.info" aria-hidden="true"></i>
+        <span>{{ toast.message }}</span>
+        <button type="button" aria-label="Fechar aviso" @click="dismissToast(toast.id)">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+    </TransitionGroup>
+  </div>
+
+  <div v-if="confirmState.open" class="modal-backdrop" @click.self="settleConfirm(false)">
+    <div class="ui-modal max-w-[420px]" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+      <h3 id="confirm-title" class="font-display text-[26px] font-semibold leading-tight text-ink">{{ confirmState.title }}</h3>
+      <p v-if="confirmState.message" id="confirm-message" class="mt-2 text-[15px] leading-6 text-steel">{{ confirmState.message }}</p>
+      <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" class="ui-btn-secondary" @click="settleConfirm(false)">Cancelar</button>
+        <button type="button" :class="confirmState.tone === 'danger' ? 'ui-btn-danger-solid' : 'ui-btn-primary'" autofocus @click="settleConfirm(true)">
+          {{ confirmState.confirmLabel }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="isInfoModalOpen" class="modal-backdrop" @click.self="closeInfo()">
     <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="project-info-title">
       <div class="about-head">
         <h3 id="project-info-title">Sobre o projeto</h3>

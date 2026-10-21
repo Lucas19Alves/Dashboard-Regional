@@ -1,3 +1,5 @@
+import { settings } from './settings'
+
 export const REGIONS = {
   sp6: {
     id: 'sp6',
@@ -19,10 +21,29 @@ export const REGIONS = {
   },
 }
 
+export function getDefaultStoreCodes(regionId) {
+  return [...(REGIONS[regionId]?.storeCodes || [])]
+}
+
+// Lojas efetivas da regional: a lista das configurações, quando o usuário alterou a padrão.
+export function getStoreCodes(regionId) {
+  const override = settings.storeOverrides[regionId]
+  return Array.isArray(override) ? [...override] : getDefaultStoreCodes(regionId)
+}
+
+function withStores(region) {
+  return { ...region, storeCodes: getStoreCodes(region.id) }
+}
+
+export function getRegionList() {
+  return Object.values(REGIONS).map(withStores)
+}
+
 export const REGION_LIST = Object.values(REGIONS)
 
 export function getRegion(regionId) {
-  return REGIONS[String(regionId || '').toLowerCase()] || REGIONS.sp6
+  const region = REGIONS[String(regionId || '').toLowerCase()] || REGIONS.sp6
+  return withStores(region)
 }
 
 export function sessionBelongsToRegion(session, regionId) {
