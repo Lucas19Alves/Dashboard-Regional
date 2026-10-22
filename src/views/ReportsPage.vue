@@ -13,6 +13,7 @@ import ReportSnapshot from '../components/ReportSnapshot.vue'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
 import StoreTowerChart from '../components/StoreTowerChart.vue'
+import TrendChart from '../components/TrendChart.vue'
 
 const route = useRoute()
 const region = computed(() => getRegion(route.params.region))
@@ -70,13 +71,6 @@ const comparison = computed(() => report.value.previous)
 
 const chartPalette = ['#2F6FB3', '#7A4FB0', '#0F8B8D', '#C25E9E', '#4E7D2E', '#B5651D', '#5B6CC9', '#8C6D1F', '#2A9DBA', '#A1465B', '#3F8F6B', '#6E5A9E', '#D07A3A']
 
-const trendDates = computed(() => {
-  return filteredSessions.value.map((session) => ({
-    isoDate: session.isoDate,
-    label: session.isoDate ? new Date(`${session.isoDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
-  }))
-})
-
 const regionalTrendSeries = computed(() => {
   return filteredSessions.value.map((session) => {
     const selected = (session.stores || []).filter((store) => selectedStores.value.includes(store.code) && !isCancelledStore(store))
@@ -121,90 +115,11 @@ const storeTrendSeries = computed(() => {
   }).filter((series) => series.points.some((point) => point.totalSku > 0))
 })
 
-const chartSeries = computed(() => [{
-  code: 'Regional',
-  color: 'rgb(var(--c-ink))',
-  isRegional: true,
-  points: regionalTrendSeries.value,
-}, ...storeTrendSeries.value.map((series) => ({ ...series, isRegional: false }))])
-
-const chartWidth = 640
-const chartHeight = 230
-const chartPadding = 36
-const chartPlotWidth = chartWidth - chartPadding * 2
-const chartPlotHeight = chartHeight - chartPadding * 2
-
-const maxTrendValue = computed(() => {
-  const values = chartSeries.value.flatMap((series) => series.points.map((point) => point.value))
-  return Math.max(100, ...values)
-})
-
-const chartPoints = computed(() => {
-  if (!trendDates.value.length) return []
-
-  const slot = trendDates.value.length > 1 ? chartPlotWidth / (trendDates.value.length - 1) : 0
-
-  return chartSeries.value.map((series) => ({
-    ...series,
-    points: series.points.map((point, index) => {
-      const x = chartPadding + index * slot
-      const y = chartHeight - chartPadding - ((point.value / maxTrendValue.value) * chartPlotHeight)
-      return { ...point, x, y }
-    }),
-  }))
-})
-
-function getLinePath(points) {
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-}
-
-function getAreaPath(points) {
-  if (!points.length) return ''
-  return `${getLinePath(points)} L ${points[points.length - 1].x} ${chartHeight - chartPadding} L ${points[0].x} ${chartHeight - chartPadding} Z`
-}
-
-const hoveredTrendIndex = ref(null)
-const currentHoverDate = computed(() => {
-  if (hoveredTrendIndex.value === null) return null
-  return trendDates.value[hoveredTrendIndex.value] || null
-})
-
-const hoverRows = computed(() => {
-  if (hoveredTrendIndex.value === null) return []
-
-  return chartSeries.value
-    .map((series) => ({
-      code: series.code,
-    displayName: formatStoreLabel(series.code, series.name, region.value.name),
-    color: series.color,
-    value: series.points[hoveredTrendIndex.value]?.value ?? null,
-    pendingPct: series.points[hoveredTrendIndex.value]?.pendingPct ?? 0,
-    accuracyPct: series.points[hoveredTrendIndex.value]?.accuracyPct ?? 0,
-    isRegional: series.isRegional,
-  }))
-    .filter((row) => row.value !== null)
-    .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
-})
-
-function handleChartMove(event) {
-  if (!trendDates.value.length) return
-
-  const bounds = event.currentTarget.getBoundingClientRect()
-  const relativeX = ((event.clientX - bounds.left) / bounds.width) * chartWidth
-  const span = Math.max(1, trendDates.value.length - 1)
-  const index = Math.min(trendDates.value.length - 1, Math.max(0, Math.round((relativeX - chartPadding) / (chartPlotWidth / span))))
-  hoveredTrendIndex.value = index
-}
-
-function clearTrendHover() {
-  hoveredTrendIndex.value = null
-}
-
 const trendChartCard = ref(null)
 
 async function exportTrendChart() {
   if (!trendChartCard.value) return
-  await exportCardAsPng(trendChartCard.value, 'leitura-ao-longo-do-periodo', { scale: 2.5, bottomPadding: 24 })
+  await exportCardAsPng(trendChartCard.value, `evolucao-${slug(region.value.code)}-${slug(selectedAuditType.value)}-${startDate.value || 'inicio'}-a-${endDate.value || 'fim'}`, { scale: 2.5 })
 }
 
 const insights = computed(() => {
@@ -666,116 +581,29 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div ref="trendChartCard" class="ui-card p-5">
-      <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <h2 class="ui-title !mt-0">{{ reportLabels.read }} ao longo do período</h2>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            data-export-control
-            class="ui-btn-soft"
-            @click="exportTrendChart"
-          >
-            <i class="fa-solid fa-download"></i>
-            Salvar imagem
-          </button>
-          <span class="ui-badge ui-badge-mute">Meta: {{ formatLimit(metaThreshold) }}%</span>
-        </div>
+    <section ref="trendChartCard" class="ui-card p-5" aria-labelledby="trend-title">
+      <div class="mb-1 flex flex-wrap items-start justify-between gap-3">
+        <h2 id="trend-title" class="ui-title !mt-0">{{ reportLabels.read }} ao longo do período</h2>
+        <button type="button" data-export-control class="ui-btn-soft" :disabled="!report.trend.dates.length" @click="exportTrendChart">
+          <i class="fa-solid fa-download" aria-hidden="true"></i>
+          Salvar imagem
+        </button>
       </div>
 
-      <div v-if="chartPoints.length" class="space-y-4">
-        <div class="relative overflow-hidden rounded-md border border-line p-3">
-          <svg viewBox="0 0 640 230" class="h-[420px] w-full cursor-crosshair" role="img" aria-label="Comparativo de leitura por loja e regional" @mousemove="handleChartMove" @mouseleave="clearTrendHover">
-            <defs>
-              <linearGradient id="regionalArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#1B2430" stop-opacity="0.12" />
-                <stop offset="100%" stop-color="#1B2430" stop-opacity="0" />
-              </linearGradient>
-              <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.14" />
-              </filter>
-            </defs>
-            <g>
-              <line x1="36" y1="194" x2="604" y2="194" class="stroke-line-strong" stroke-width="1" />
-              <line x1="36" y1="36" x2="604" y2="36" class="stroke-line" stroke-width="1" />
-              <line x1="36" y1="115" x2="604" y2="115" class="stroke-line" stroke-width="1" />
-              <line x1="36" y1="194" x2="36" y2="36" class="stroke-line-strong" stroke-width="1" />
-            </g>
+      <TrendChart
+        v-if="report.trend.dates.length"
+        :dates="report.trend.dates"
+        :regional="report.trend.regional"
+        :stores="report.trend.stores.filter((series) => series.points.some(Boolean))"
+        :value-label="reportLabels.read"
+        :region-code="region.code"
+        :show-types="selectedAuditType === 'Geral'"
+      />
 
-            <g>
-              <text x="16" y="198" class="fill-steel" font-size="13">0%</text>
-              <text x="6" y="40" class="fill-steel" font-size="13">100%</text>
-            </g>
-
-            <g v-if="hoveredTrendIndex !== null && currentHoverDate">
-              <line :x1="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y1="36" :x2="chartPadding + (hoveredTrendIndex * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y2="194" class="stroke-steel" stroke-dasharray="4 6" stroke-width="1" />
-            </g>
-
-            <path v-if="chartPoints[0]?.points?.length" :d="getAreaPath(chartPoints[0].points)" fill="url(#regionalArea)" />
-
-            <path
-              v-for="series in chartPoints"
-              :key="`${series.code}-line`"
-              :d="getLinePath(series.points)"
-              fill="none"
-              :style="{ stroke: series.color }"
-              :stroke-width="series.isRegional ? 3 : 2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-
-            <g v-if="trendDates.length <= 15">
-              <template v-for="series in chartPoints" :key="`${series.code}-dots`">
-                <circle v-for="(point, index) in series.points" :key="index" :cx="point.x" :cy="point.y" :r="series.isRegional ? 3.5 : 2.5" :style="{ fill: series.color }" />
-              </template>
-            </g>
-
-            <g v-if="hoveredTrendIndex !== null && currentHoverDate">
-              <circle
-                v-for="series in chartPoints"
-                :key="`${series.code}-focus`"
-                :cx="series.points[hoveredTrendIndex]?.x ?? 0"
-                :cy="series.points[hoveredTrendIndex]?.y ?? 0"
-                r="4.5"
-                :style="{ fill: series.color }"
-                class="stroke-paper"
-                stroke-width="2"
-              />
-            </g>
-
-            <g>
-              <text v-for="date in trendDates" :key="`${date.isoDate}-label`" :x="36 + (trendDates.indexOf(date) * (chartPlotWidth / Math.max(trendDates.length - 1, 1)))" y="216" class="fill-steel" font-size="12" font-weight="600" text-anchor="middle">
-                {{ date.label }}
-              </text>
-            </g>
-          </svg>
-
-          <div v-if="hoveredTrendIndex !== null && currentHoverDate" class="pointer-events-none absolute right-3 top-3 max-w-xs rounded-md bg-ink p-3 text-white shadow-lg">
-            <p class="font-display text-[18px] font-semibold">{{ currentHoverDate.label }}</p>
-            <div class="mt-2 space-y-1.5">
-              <div v-for="row in hoverRows" :key="row.code" class="flex items-center justify-between gap-3 text-[13px] text-white/80">
-                <div class="flex items-center gap-2">
-                  <span class="h-2.5 w-2.5 rounded-full" :style="{ background: row.color }" />
-                <span :class="row.isRegional ? 'font-bold text-white' : ''">{{ row.displayName }}</span>
-                </div>
-                <span class="font-semibold text-white">{{ (row.value ?? 0).toFixed(2) }}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex flex-wrap gap-3">
-          <div v-for="series in chartPoints" :key="series.code" class="flex items-center gap-1.5 text-[14px] font-medium text-steel">
-            <span class="h-2.5 w-2.5 rounded-full" :style="{ background: series.color }" />
-            {{ series.code }}
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="rounded-md border border-dashed border-line-strong px-4 py-6 text-[15px] text-steel">
+      <div v-else class="mt-3 rounded-md border border-dashed border-line-strong px-4 py-6 text-[15px] text-steel">
         Nenhuma auditoria no período escolhido. Amplie as datas ou marque mais lojas.
       </div>
-    </div>
+    </section>
 
     <StoreTowerChart
       :stores="chartStoreRows"
