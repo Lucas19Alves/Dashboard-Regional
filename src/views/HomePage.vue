@@ -71,16 +71,16 @@ const summary = computed(() => {
 const operationalCards = computed(() => {
   if (auditType.value === 'Presença') {
     return [
+      { label: 'Ruptura identificada', value: `${summary.value.pendingPct.toFixed(2)}%`, subtext: `Itens sem presença. Meta: até ${formatLimit(settings.meta)}%`, tone: getMetaTone(summary.value.pendingPct) },
       { label: 'Presença', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Itens presentes sobre o SKU', tone: 'blue' },
-      { label: 'Ruptura identificada', value: `${summary.value.pendingPct.toFixed(2)}%`, subtext: 'Itens sem presença', tone: getMetaTone(summary.value.pendingPct) },
       { label: 'Itens presentes', value: summary.value.updatedItems.toLocaleString('pt-BR'), subtext: 'SKU com presença confirmada', tone: 'slate' },
       { label: 'Itens em ruptura', value: summary.value.ruptureItems.toLocaleString('pt-BR'), subtext: 'Base para a auditoria de ruptura', tone: 'slate' },
     ]
   }
 
   return [
+    { label: 'Ruptura final', value: `${summary.value.rupturePct.toFixed(2)}%`, subtext: `Ruptura no fechamento. Meta: até ${formatLimit(settings.meta)}%`, tone: getMetaTone(summary.value.rupturePct) },
     { label: 'Presença após auditoria', value: `${summary.value.readPct.toFixed(2)}%`, subtext: 'Presença após a verificação', tone: 'blue' },
-    { label: 'Ruptura final', value: `${summary.value.rupturePct.toFixed(2)}%`, subtext: 'Ruptura confirmada no fechamento', tone: getMetaTone(summary.value.rupturePct) },
     { label: 'Recuperação', value: `${summary.value.recoveryPct.toFixed(2)}%`, subtext: 'Redução sobre a ruptura inicial', tone: 'green' },
     { label: 'Itens recuperados', value: summary.value.recoveredItems.toLocaleString('pt-BR'), subtext: 'Diferença entre Presença e Ruptura', tone: 'slate' },
   ]
@@ -102,14 +102,14 @@ const operationalSummaryTiles = computed(() => auditType.value === 'Presença'
 
 const operationalExecution = computed(() => auditType.value === 'Presença'
   ? [
-      { label: 'Presença', value: summary.value.readPct, color: 'bg-ink' },
       { label: 'Ruptura', value: summary.value.pendingPct, color: toneBg[getMetaTone(summary.value.pendingPct)] },
+      { label: 'Presença', value: summary.value.readPct, color: 'bg-ink' },
       { label: 'Cobertura', value: summary.value.readPct, color: 'bg-good' },
       { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-steel' },
     ]
   : [
-      { label: 'Presença final', value: summary.value.readPct, color: 'bg-ink' },
       { label: 'Ruptura final', value: summary.value.rupturePct, color: toneBg[getMetaTone(summary.value.rupturePct)] },
+      { label: 'Presença final', value: summary.value.readPct, color: 'bg-ink' },
       { label: 'Recuperação', value: summary.value.recoveryPct, color: 'bg-good' },
       { label: 'Lojas', value: null, count: storeCodes.value.length, color: 'bg-steel' },
     ])
@@ -188,15 +188,15 @@ const storeTableRows = computed(() => {
 
 const tableColumns = computed(() => auditType.value === 'Etiqueta'
   ? [
+      { key: 'pendingPct', label: 'Pendência' },
       { key: 'totalSku', label: 'SKU' },
       { key: 'readPct', label: 'Leitura' },
-      { key: 'pendingPct', label: 'Pendência' },
       { key: 'thirdPct', label: 'Acertabilidade' },
     ]
   : [
+      { key: 'pendingPct', label: 'Ruptura' },
       { key: 'totalSku', label: 'SKU' },
       { key: 'readPct', label: 'Presença' },
-      { key: 'pendingPct', label: 'Ruptura' },
       { key: 'thirdPct', label: auditType.value === 'Ruptura' ? 'Recuperação' : 'Presença inicial' },
     ])
 
@@ -490,8 +490,8 @@ onMounted(async () => {
       </div>
 
       <div v-if="auditType === 'Etiqueta'" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <MetricCard label="Pendência" :value="`${summary.pendingPct.toFixed(2)}%`" :subtext="`Itens não lidos. Indicador da meta: até ${formatLimit(settings.meta)}%`" :tone="getMetaTone(summary.pendingPct)" />
         <MetricCard label="Leitura" :value="`${summary.readPct.toFixed(2)}%`" subtext="Itens lidos sobre o SKU total" />
-        <MetricCard label="Pendência" :value="`${summary.pendingPct.toFixed(2)}%`" :subtext="`Itens não lidos. Meta: até ${formatLimit(settings.meta)}%`" :tone="getMetaTone(summary.pendingPct)" />
         <MetricCard label="Acertabilidade" :value="`${summary.accuracyPct.toFixed(2)}%`" subtext="Atualizados entre os lidos" />
         <MetricCard label="Itens lidos" :value="`${(summary.updatedItems + summary.outdatedItems).toLocaleString('pt-BR')}`" :subtext="`de ${summary.totalSku.toLocaleString('pt-BR')} no SKU`" />
       </div>
@@ -559,9 +559,9 @@ onMounted(async () => {
           <h3 class="ui-title !mt-0">Andamento do dia</h3>
           <div v-if="auditType === 'Etiqueta'" class="mt-4 space-y-4">
             <div v-for="bar in [
+              { label: 'Pendência', value: summary.pendingPct, color: toneBg[getMetaTone(summary.pendingPct)] },
               { label: 'Leitura', value: summary.readPct, color: 'bg-ink' },
               { label: 'Acertabilidade', value: summary.accuracyPct, color: 'bg-steel' },
-              { label: 'Pendência', value: summary.pendingPct, color: toneBg[getMetaTone(summary.pendingPct)] },
             ]" :key="bar.label">
               <div class="flex items-baseline justify-between text-[15px]">
                 <span class="font-medium text-steel">{{ bar.label }}</span>
@@ -626,9 +626,9 @@ onMounted(async () => {
             <tbody class="divide-y divide-line text-[15px]">
               <tr v-for="row in storeTableRows" :key="row.code" class="hover:bg-floor/50" :class="{ 'text-steel': row.isCancelled }">
                 <td class="max-w-[260px] truncate whitespace-nowrap px-3 py-2.5 font-semibold" :title="row.name">{{ row.displayName }}</td>
+                <td class="px-3 py-2.5 text-right font-semibold" :class="row.isCancelled ? '' : toneClass[getMetaTone(row.pendingPct)]">{{ formatPct(row.pendingPct) }}</td>
                 <td class="px-3 py-2.5 text-right">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
                 <td class="px-3 py-2.5 text-right">{{ formatPct(row.readPct) }}</td>
-                <td class="px-3 py-2.5 text-right font-semibold" :class="row.isCancelled ? '' : toneClass[getMetaTone(row.pendingPct)]">{{ formatPct(row.pendingPct) }}</td>
                 <td class="px-3 py-2.5 text-right">{{ formatPct(row.thirdPct) }}</td>
                 <td class="px-3 py-2.5">
                   <span v-if="row.isCancelled" class="ui-badge ui-badge-mute">Cancelada</span>

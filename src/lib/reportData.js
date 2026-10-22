@@ -213,9 +213,9 @@ export function buildReport({ sessions = [], type = 'Etiqueta', startDate = '', 
   const previous = summarizeSessions(previousSessions, { type, selectedStores, storeCodes })
 
   const metrics = [
-    { key: 'auditCount', label: 'Auditorias', format: 'int', current: totals.auditCount, previous: previous.auditCount, better: 'neutral' },
-    { key: 'readPct', label: labels.read, format: 'pct', current: totals.readPct, previous: previous.readPct, better: 'up' },
     { key: 'pendingPct', label: labels.pending, format: 'pct', current: totals.pendingPct, previous: previous.pendingPct, better: 'down' },
+    { key: 'readPct', label: labels.read, format: 'pct', current: totals.readPct, previous: previous.readPct, better: 'up' },
+    { key: 'auditCount', label: 'Auditorias', format: 'int', current: totals.auditCount, previous: previous.auditCount, better: 'neutral' },
     { key: 'thirdPct', label: labels.accuracy, format: 'pct', current: totals.thirdPct, previous: previous.thirdPct, better: 'up' },
     { key: 'cancellations', label: 'Cancelamentos', format: 'int', current: totals.cancellations, previous: previous.cancellations, better: 'down' },
   ].map((metric) => ({ ...metric, delta: Number((metric.current - metric.previous).toFixed(2)), hasPrevious: previousSessions.length > 0 }))

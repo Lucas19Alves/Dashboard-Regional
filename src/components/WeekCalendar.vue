@@ -1,6 +1,10 @@
 <script setup>
 import { computed } from 'vue'
 import { getTodayIso } from '../lib/metrics'
+import { getMetaTone } from '../lib/settings'
+
+const toneDot = { green: 'bg-good', orange: 'bg-warn', red: 'bg-bad' }
+const toneTitle = { green: 'Na meta', orange: 'Atenção', red: 'Fora da meta' }
 
 const props = defineProps({
   days: Array,
@@ -85,8 +89,11 @@ function nextWeek() {
             <span v-if="day.iso === todayIso" class="day-today">hoje</span>
           </span>
           <span v-if="sessionByDay[day.iso]" class="text-right leading-tight">
-            <span class="hidden text-[12px] font-medium opacity-75 sm:block">{{ (sessionByDay[day.iso].auditType || day.activity) === 'Etiqueta' ? 'Leitura' : 'Presença' }}</span>
-            <span class="font-display text-[19px] font-semibold sm:text-[22px]">{{ (sessionByDay[day.iso].summary?.readPct || 0).toFixed(1).replace('.', ',') }}%</span>
+            <span class="hidden text-[12px] font-medium opacity-75 sm:block">{{ (sessionByDay[day.iso].auditType || day.activity) === 'Etiqueta' ? 'Pendência' : 'Ruptura' }}</span>
+            <span class="inline-flex items-center gap-1.5 font-display text-[19px] font-semibold sm:text-[22px]">
+              <i class="inline-block h-2 w-2 rounded-full" :class="toneDot[getMetaTone(sessionByDay[day.iso].summary?.pendingPct || 0)]" :title="toneTitle[getMetaTone(sessionByDay[day.iso].summary?.pendingPct || 0)]" aria-hidden="true"></i>
+              {{ (sessionByDay[day.iso].summary?.pendingPct || 0).toFixed(1).replace('.', ',') }}%
+            </span>
           </span>
           <span v-else class="text-[13px] font-semibold opacity-70">
             <i class="fa-solid fa-plus text-[10px]" aria-hidden="true"></i><span class="hidden sm:inline"> Importar</span>
