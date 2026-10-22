@@ -21,7 +21,7 @@ const totals = computed(() => props.report.totals)
 const metrics = computed(() => props.report.previous.metrics)
 
 function fmt(value, format) {
-  if (format === 'pct') return `${Number(value || 0).toFixed(2)}%`
+  if (format === 'pct') return `${Number(value || 0).toFixed(2).replace('.', ',')}%`
   return Number(value || 0).toLocaleString('pt-BR')
 }
 
@@ -29,7 +29,7 @@ function deltaText(metric) {
   if (!metric.hasPrevious) return 'sem dados no mês anterior'
   const sign = metric.delta > 0 ? '+' : ''
   const unit = metric.format === 'pct' ? ' p.p.' : ''
-  return `${sign}${metric.format === 'pct' ? metric.delta.toFixed(2) : metric.delta.toLocaleString('pt-BR')}${unit} vs mês anterior`
+  return `${sign}${metric.format === 'pct' ? metric.delta.toFixed(2).replace('.', ',') : metric.delta.toLocaleString('pt-BR')}${unit} vs mês anterior`
 }
 
 function deltaTone(metric) {
@@ -56,7 +56,7 @@ const barScale = computed(() => {
   const highest = Math.max(meta, ...barRows.value.map((row) => row.pendingPct))
   return Math.max(10, Math.ceil((highest * 1.12) / 5) * 5)
 })
-const barTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({ ratio, label: `${Number((barScale.value * ratio).toFixed(1))}%` })))
+const barTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({ ratio, label: `${String(Number((barScale.value * ratio).toFixed(1))).replace('.', ',')}%` })))
 function barClass(row) {
   if (row.isRegional) return 'bar-regional'
   if (row.pendingPct <= meta) return 'bar-good'
@@ -73,14 +73,28 @@ const plotW = LW - PAD.left - PAD.right
 const plotH = LH - PAD.top - PAD.bottom
 const dates = computed(() => props.report.trend.dates)
 const xAt = (index) => PAD.left + (dates.value.length > 1 ? (index * plotW) / (dates.value.length - 1) : plotW / 2)
-const yAt = (value) => PAD.top + plotH - (Math.max(0, Math.min(100, value)) / 100) * plotH
+// Escala da pendência: de 0 até acima do maior valor e da meta.
+const trendScale = computed(() => {
+  const values = [
+    ...props.report.trend.regional.filter(Boolean).map((point) => point.pendingPct),
+    ...props.report.trend.stores.flatMap((series) => series.points.filter(Boolean).map((point) => point.pendingPct)),
+  ]
+  const hi = Math.max(meta * 1.6, ...(values.length ? values : [0]))
+  const step = hi <= 6 ? 1 : hi <= 12 ? 2 : hi <= 30 ? 5 : 10
+  const max = Math.ceil((hi * 1.08) / step) * step
+  const ticks = []
+  for (let value = 0; value <= max + 0.001; value += step) ticks.push(Number(value.toFixed(2)))
+  return { max, ticks }
+})
+const yAt = (value) => PAD.top + plotH - (Math.max(0, Math.min(trendScale.value.max, value)) / trendScale.value.max) * plotH
+const tickLabel = (value) => `${String(Number(value.toFixed(1))).replace('.', ',')}%`
 
 function linePath(points) {
   let path = ''
   let open = false
   points.forEach((point, index) => {
     if (!point) { open = false; return }
-    path += `${open ? 'L' : 'M'} ${xAt(index).toFixed(1)} ${yAt(point.readPct).toFixed(1)} `
+    path += `${open ? 'L' : 'M'} ${xAt(index).toFixed(1)} ${yAt(point.pendingPct).toFixed(1)} `
     open = true
   })
   return path.trim()
@@ -146,7 +160,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
               <div class="bars" :style="{ gridTemplateColumns: `repeat(${barRows.length}, 1fr)` }">
                 <div v-for="row in barRows" :key="row.code" class="bar-col" :class="{ 'bar-col-regional': row.isRegional }">
                   <div class="bar-stage">
-                    <span class="bar-value" :style="{ bottom: `calc(${barHeight(row)}% + 6px)` }">{{ row.pendingPct.toFixed(1) }}%</span>
+                    <span class="bar-value" :style="{ bottom: `calc(${barHeight(row)}% + 6px)` }">{{ row.pendingPct.toFixed(1).replace('.', ',') }}%</span>
                     <div class="bar-fill" :class="barClass(row)" :style="{ height: `${barHeight(row)}%` }" />
                   </div>
                   <div class="bar-label">
@@ -164,22 +178,25 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
           <section class="card trend-card">
             <div class="card-head">
               <div>
-                <h2>{{ labels.read }} ao longo do período</h2>
+                <h2>{{ labels.pending }} ao longo do período</h2>
               </div>
-              <div class="legend"><span><i class="dot dot-regional"></i>Regional</span><span class="muted">linhas finas: lojas</span></div>
+              <div class="legend"><span><i class="dot dot-regional"></i>Regional</span><span class="muted">tracejado: meta {{ formatLimit(meta) }}%</span></div>
             </div>
             <p v-if="!dates.length" class="empty">Sem auditorias no período.</p>
             <svg v-else :viewBox="`0 0 ${LW} ${LH}`" class="trend-svg">
-              <g v-for="tick in [0, 25, 50, 75, 100]" :key="tick">
+              <rect :x="PAD.left" :y="PAD.top" :width="plotW" :height="Math.max(0, yAt(meta) - PAD.top)" fill="#C8233A" fill-opacity="0.04" />
+              <g v-for="tick in trendScale.ticks" :key="tick">
                 <line :x1="PAD.left" :x2="LW - PAD.right" :y1="yAt(tick)" :y2="yAt(tick)" :stroke="tick === 0 ? '#C3C9D0' : '#D9DDE2'" stroke-width="1" :stroke-dasharray="tick === 0 ? '' : '4 5'" />
-                <text :x="PAD.left - 8" :y="yAt(tick) + 4" text-anchor="end" fill="#5B6573" font-size="12" font-weight="600">{{ tick }}%</text>
+                <text :x="PAD.left - 8" :y="yAt(tick) + 4" text-anchor="end" fill="#5B6573" font-size="12" font-weight="600">{{ tickLabel(tick) }}</text>
               </g>
               <path v-for="series in storeLines" :key="series.code" :d="series.path" fill="none" :stroke="series.color" stroke-width="1.6" stroke-opacity="0.55" stroke-linecap="round" stroke-linejoin="round" />
+              <line :x1="PAD.left" :x2="LW - PAD.right" :y1="yAt(meta)" :y2="yAt(meta)" stroke="#1B2430" stroke-width="1.5" stroke-dasharray="6 4" />
+              <path :d="regionalPath" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
               <path :d="regionalPath" fill="none" stroke="#1B2430" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
               <g v-for="(point, index) in report.trend.regional" :key="`p-${index}`">
                 <template v-if="point">
-                  <circle :cx="xAt(index)" :cy="yAt(point.readPct)" r="4.5" fill="#1B2430" stroke="#fff" stroke-width="2" />
-                  <text v-if="dates.length <= 16" :x="xAt(index)" :y="yAt(point.readPct) - 10" text-anchor="middle" fill="#1B2430" font-size="12" font-weight="800">{{ point.readPct.toFixed(1) }}%</text>
+                  <circle :cx="xAt(index)" :cy="yAt(point.pendingPct)" r="4.5" fill="#1B2430" stroke="#fff" stroke-width="2" />
+                  <text v-if="dates.length <= 16" :x="xAt(index)" :y="yAt(point.pendingPct) - 10" text-anchor="middle" fill="#1B2430" font-size="12" font-weight="800">{{ point.pendingPct.toFixed(1).replace('.', ',') }}%</text>
                 </template>
               </g>
               <g v-for="(date, index) in dates" :key="`d-${index}`">
@@ -209,7 +226,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
                   <td>{{ metric.label }}</td>
                   <td class="num strong">{{ fmt(metric.current, metric.format) }}</td>
                   <td class="num">{{ metric.hasPrevious ? fmt(metric.previous, metric.format) : '—' }}</td>
-                  <td class="num strong" :class="deltaTone(metric)">{{ metric.hasPrevious ? `${metric.delta > 0 ? '+' : ''}${metric.format === 'pct' ? metric.delta.toFixed(2) : metric.delta}` : '—' }}</td>
+                  <td class="num strong" :class="deltaTone(metric)">{{ metric.hasPrevious ? `${metric.delta > 0 ? '+' : ''}${metric.format === 'pct' ? metric.delta.toFixed(2).replace('.', ',') : metric.delta}` : '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -230,9 +247,9 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
             <tr>
               <th class="pos">#</th>
               <th class="col-store">Loja</th>
+              <th class="num">{{ labels.pending }}</th>
               <th class="num">SKU</th>
               <th class="num">{{ labels.read }}</th>
-              <th class="num">{{ labels.pending }}</th>
               <th class="num">{{ labels.accuracy.replace(' (Etiqueta)', '') }}</th>
               <th class="num col-canc">Canc.</th>
             </tr>
@@ -242,10 +259,10 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
               <td class="pos"><span class="pos-badge" :class="row.hasData && index < 3 ? 'pos-top' : ''">{{ row.hasData ? index + 1 : '—' }}</span></td>
               <td class="store">{{ row.displayName }}</td>
               <template v-if="row.hasData">
+                <td class="num strong" :class="pendingTone(row.pendingPct)">{{ row.pendingPct.toFixed(2).replace('.', ',') }}%</td>
                 <td class="num">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
-                <td class="num">{{ row.readPct.toFixed(2) }}%</td>
-                <td class="num strong" :class="pendingTone(row.pendingPct)">{{ row.pendingPct.toFixed(2) }}%</td>
-                <td class="num">{{ row.thirdPct.toFixed(2) }}%</td>
+                <td class="num">{{ row.readPct.toFixed(2).replace('.', ',') }}%</td>
+                <td class="num">{{ row.thirdPct.toFixed(2).replace('.', ',') }}%</td>
               </template>
               <td v-else colspan="4" class="no-audit">Sem auditoria válida no período</td>
               <td class="num"><span class="canc" :class="{ 'canc-on': row.cancellationCount }">{{ row.cancellationCount }}</span></td>
@@ -281,7 +298,7 @@ const rowHeight = computed(() => Math.max(30, Math.min(46, Math.floor(610 / Math
 
 .snap-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; height: 76px; }
 .title-block h1 { margin: 2px 0 0; font-family: 'Barlow Condensed', sans-serif; font-size: 46px; font-weight: 600; line-height: 1; }
-.filters { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 1180px; }
+.filters { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 4px; max-width: 1440px; }
 .filter-chip { display: flex; flex-direction: column; padding: 2px 16px 2px 12px; border-left: 1px solid #C3C9D0; }
 .filter-chip span { font-size: 12px; font-weight: 500; color: #5B6573; }
 .filter-chip strong { font-family: 'Barlow Condensed', sans-serif; font-size: 19px; font-weight: 600; color: #1B2430; white-space: nowrap; }

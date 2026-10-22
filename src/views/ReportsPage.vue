@@ -6,7 +6,7 @@ import { notify } from '../composables/feedback'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { toPng } from 'html-to-image'
 import { listSessions } from '../lib/database'
-import { summarizeStores, formatStoreLabel, isCancelledStore } from '../lib/metrics'
+import { formatStoreLabel } from '../lib/metrics'
 import { exportCardAsPng } from '../lib/exportImage'
 import { REPORT_TYPES, STATUS_OPTIONS, buildReport, formatDateBR } from '../lib/reportData'
 import ReportSnapshot from '../components/ReportSnapshot.vue'
@@ -69,51 +69,6 @@ const regionalSummary = computed(() => report.value.totals)
 const rankedStores = computed(() => report.value.ranking)
 const comparison = computed(() => report.value.previous)
 
-const chartPalette = ['#2F6FB3', '#7A4FB0', '#0F8B8D', '#C25E9E', '#4E7D2E', '#B5651D', '#5B6CC9', '#8C6D1F', '#2A9DBA', '#A1465B', '#3F8F6B', '#6E5A9E', '#D07A3A']
-
-const regionalTrendSeries = computed(() => {
-  return filteredSessions.value.map((session) => {
-    const selected = (session.stores || []).filter((store) => selectedStores.value.includes(store.code) && !isCancelledStore(store))
-    const summary = summarizeStores(selected, storeCodes.value)
-    return {
-      isoDate: session.isoDate,
-      label: session.isoDate ? new Date(`${session.isoDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
-      value: Number(summary.readPct || 0),
-      pendingPct: Number(summary.pendingPct || 0),
-      accuracyPct: Number(summary.accuracyPct || 0),
-      totalSku: Number(summary.totalSku || 0),
-      pendingItems: Number(summary.pendingItems || 0),
-    }
-  }).filter((item) => item.isoDate)
-})
-
-const storeTrendSeries = computed(() => {
-  const codes = selectedStores.value.length ? selectedStores.value : storeCodes.value
-  return codes.map((code, index) => {
-    const matchStore = (filteredSessions.value || [])
-      .flatMap((session) => session.stores || [])
-      .find((store) => store.code === code && !isCancelledStore(store))
-
-    return {
-      code,
-      name: matchStore?.name || '',
-      color: chartPalette[index % chartPalette.length],
-      points: filteredSessions.value.map((session) => {
-        const match = (session.stores || []).find((store) => store.code === code && !isCancelledStore(store))
-        const summary = match ? summarizeStores([match], storeCodes.value) : { readPct: 0, pendingPct: 0, accuracyPct: 0, totalSku: 0, pendingItems: 0 }
-        return {
-          isoDate: session.isoDate,
-          label: session.isoDate ? new Date(`${session.isoDate}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—',
-          value: Number(summary.readPct || 0),
-          pendingPct: Number(summary.pendingPct || 0),
-          accuracyPct: Number(summary.accuracyPct || 0),
-          totalSku: Number(summary.totalSku || 0),
-          pendingItems: Number(summary.pendingItems || 0),
-        }
-      }).filter((item) => item.isoDate),
-    }
-  }).filter((series) => series.points.some((point) => point.totalSku > 0))
-})
 
 const trendChartCard = ref(null)
 
@@ -122,59 +77,63 @@ async function exportTrendChart() {
   await exportCardAsPng(trendChartCard.value, `evolucao-${slug(region.value.code)}-${slug(selectedAuditType.value)}-${startDate.value || 'inicio'}-a-${endDate.value || 'fim'}`, { scale: 2.5 })
 }
 
+// Destaques do período, sempre pela pendência (indicador da meta: cair é bom).
 const insights = computed(() => {
-  if (!regionalTrendSeries.value.length) {
-    return [{ title: 'Sem dados', tone: 'neutral', body: 'Ainda não há evidências suficientes para análise no período selecionado.' }]
+  const trend = report.value.trend
+  const pendingWord = reportLabels.value.pending.toLowerCase()
+  const firstOf = (points) => points.find(Boolean)
+  const lastOf = (points) => [...points].reverse().find(Boolean)
+  const regionalFirst = firstOf(trend.regional)
+  const regionalLast = lastOf(trend.regional)
+  if (!regionalFirst || !regionalLast) {
+    return [{ title: 'Sem dados', tone: 'neutral', body: 'Nenhuma auditoria no período e nas lojas escolhidas.' }]
   }
 
-  const first = regionalTrendSeries.value[0]
-  const last = regionalTrendSeries.value[regionalTrendSeries.value.length - 1]
-  const delta = Number((last.value - first.value).toFixed(2))
+  const regionalName = formatStoreLabel('Regional', '', region.value.name)
+  const delta = Number((regionalLast.pendingPct - regionalFirst.pendingPct).toFixed(2))
+  const stores = trend.stores
+    .map((series) => ({ ...series, first: firstOf(series.points), last: lastOf(series.points) }))
+    .filter((series) => series.last)
+  const label = (series) => formatStoreLabel(series.code, series.name, region.value.name)
+  const pctText = (value) => `${Number(value).toFixed(2).replace('.', ',')}%`
 
-  const bestStore = [...storeTrendSeries.value].sort((a, b) => {
-    const lastA = a.points[a.points.length - 1]?.value || 0
-    const lastB = b.points[b.points.length - 1]?.value || 0
-    return lastB - lastA
-  })[0]
-
-  const biggestRise = [...storeTrendSeries.value].sort((a, b) => {
-    const finalA = a.points[a.points.length - 1]?.value || 0
-    const initialA = a.points[0]?.value || 0
-    const finalB = b.points[b.points.length - 1]?.value || 0
-    const initialB = b.points[0]?.value || 0
-    return (finalB - initialB) - (finalA - initialA)
-  })[0]
-
-  const withinMetaStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) <= metaThreshold.value).length
-  const riskStores = storeTrendSeries.value.filter((store) => (store.points[store.points.length - 1]?.pendingPct ?? 0) > metaThreshold.value).length
-  const recoveryRate = storeTrendSeries.value.length ? (withinMetaStores / storeTrendSeries.value.length) * 100 : 0
+  const best = [...stores].sort((a, b) => a.last.pendingPct - b.last.pendingPct)[0]
+  const drops = stores
+    .filter((series) => series.first !== series.last)
+    .map((series) => ({ ...series, change: series.last.pendingPct - series.first.pendingPct }))
+    .sort((a, b) => a.change - b.change)
+  const biggestDrop = drops[0] && drops[0].change < 0 ? drops[0] : null
+  const within = stores.filter((series) => series.last.pendingPct <= metaThreshold.value)
+  const worst = [...stores].sort((a, b) => b.last.pendingPct - a.last.pendingPct)[0]
 
   return [
     {
       title: 'Regional',
-      tone: delta >= 0 ? 'positive' : 'negative',
-      body: delta >= 0
-        ? `${formatStoreLabel('Regional', '', region.value.name)} avançou ${delta.toFixed(2)} p.p. no período, mostrando aceleração consistente na leitura.`
-        : `${formatStoreLabel('Regional', '', region.value.name)} recuou ${Math.abs(delta).toFixed(2)} p.p. e precisa reforço operacional para recuperar ritmo.`,
+      tone: delta <= 0 ? 'positive' : 'negative',
+      body: delta === 0
+        ? `${regionalName} manteve ${pctText(regionalLast.pendingPct)} de ${pendingWord} no período.`
+        : delta < 0
+          ? `${regionalName} reduziu a ${pendingWord} em ${Math.abs(delta).toFixed(2).replace('.', ',')} p.p., de ${pctText(regionalFirst.pendingPct)} para ${pctText(regionalLast.pendingPct)}.`
+          : `${regionalName} aumentou a ${pendingWord} em ${delta.toFixed(2).replace('.', ',')} p.p., de ${pctText(regionalFirst.pendingPct)} para ${pctText(regionalLast.pendingPct)}.`,
     },
     {
-      title: 'Maior desempenho',
+      title: 'Menor pendência',
       tone: 'positive',
-      body: bestStore
-        ? `${formatStoreLabel(bestStore.code, bestStore.name, region.value.name)} lidera o comparativo com ${(bestStore.points[bestStore.points.length - 1]?.value ?? 0).toFixed(2)}% de leitura e ${(bestStore.points[bestStore.points.length - 1]?.pendingPct ?? 0).toFixed(2)}% de pendência.`
-        : 'Ainda não há loja com volume suficiente para comparar.',
+      body: best
+        ? `${label(best)} terminou o período com ${pctText(best.last.pendingPct)} de ${pendingWord}, a menor da regional.`
+        : 'Ainda não há loja com dados para comparar.',
     },
     {
-      title: 'Recuperação',
-      tone: biggestRise ? 'positive' : 'neutral',
-      body: biggestRise
-        ? `${formatStoreLabel(biggestRise.code, biggestRise.name, region.value.name)} foi a loja com melhor recuperação, ganhando ${(((biggestRise.points[biggestRise.points.length - 1]?.value ?? 0) - (biggestRise.points[0]?.value ?? 0))).toFixed(2)} p.p. no período.`
-        : 'Não há recuperação relevante entre as lojas selecionadas.',
+      title: 'Maior queda',
+      tone: biggestDrop ? 'positive' : 'neutral',
+      body: biggestDrop
+        ? `${label(biggestDrop)} caiu ${Math.abs(biggestDrop.change).toFixed(2).replace('.', ',')} p.p., de ${pctText(biggestDrop.first.pendingPct)} para ${pctText(biggestDrop.last.pendingPct)}.`
+        : `Nenhuma loja reduziu a ${pendingWord} no período.`,
     },
     {
-      title: 'Cobertura da meta',
-      tone: recoveryRate >= 60 ? 'positive' : 'warning',
-      body: `${withinMetaStores} de ${storeTrendSeries.value.length || 0} lojas estão dentro da meta de ${formatLimit(metaThreshold.value)}%. ${riskStores} ${riskStores === 1 ? 'loja ainda exige' : 'lojas ainda exigem'} atenção.`,
+      title: 'Meta',
+      tone: within.length === stores.length ? 'positive' : within.length >= stores.length * 0.6 ? 'warning' : 'negative',
+      body: `${within.length} de ${stores.length} lojas dentro da meta de ${formatLimit(metaThreshold.value)}%.${worst && worst.last.pendingPct > metaThreshold.value ? ` Pior: ${label(worst)} com ${pctText(worst.last.pendingPct)}.` : ''}`,
     },
   ]
 })
@@ -243,9 +202,9 @@ async function exportRankingExcel() {
       Posição: row.hasData ? index + 1 : '',
       Loja: row.code,
       Nome: row.name || '',
+      [labels.pending]: row.hasData ? Number(row.pendingPct.toFixed(2)) : '',
       SKU: row.hasData ? row.totalSku : '',
       [labels.read]: row.hasData ? Number(row.readPct.toFixed(2)) : '',
-      [labels.pending]: row.hasData ? Number(row.pendingPct.toFixed(2)) : '',
       [labels.accuracy]: row.hasData ? Number(row.thirdPct.toFixed(2)) : '',
       [labels.moved]: row.hasData ? row.movedItems : '',
       Cancelamentos: row.cancellationCount,
@@ -255,16 +214,16 @@ async function exportRankingExcel() {
       Posição: '',
       Loja: 'Regional',
       Nome: region.value.name,
+      [labels.pending]: Number(regionalSummary.value.pendingPct.toFixed(2)),
       SKU: regionalSummary.value.totalSku,
       [labels.read]: Number(regionalSummary.value.readPct.toFixed(2)),
-      [labels.pending]: Number(regionalSummary.value.pendingPct.toFixed(2)),
       [labels.accuracy]: Number(regionalSummary.value.thirdPct.toFixed(2)),
       [labels.moved]: '',
       Cancelamentos: cancellationCount.value,
       Situação: { green: 'Na meta', orange: 'Atenção', red: 'Fora da meta' }[getMetaTone(regionalSummary.value.pendingPct)],
     })
     const sheet = XLSX.utils.json_to_sheet(rows)
-    sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 34 }, { wch: 9 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 13 }, { wch: 14 }, { wch: 20 }]
+    sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 34 }, { wch: 14 }, { wch: 9 }, { wch: 16 }, { wch: 18 }, { wch: 13 }, { wch: 14 }, { wch: 20 }]
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, selectedAuditType.value.slice(0, 31))
     const period = startDate.value || endDate.value ? `${startDate.value || 'inicio'}-a-${endDate.value || 'fim'}` : 'historico'
@@ -494,10 +453,10 @@ onMounted(async () => {
     </div>
 
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-      <MetricCard label="Auditorias" :value="auditCount" />
+      <MetricCard :label="reportLabels.pending" :value="`${regionalSummary.pendingPct.toFixed(2)}%`" :subtext="`Indicador da meta: até ${formatLimit(metaThreshold)}%`" :tone="getMetaTone(regionalSummary.pendingPct)" />
       <MetricCard :label="reportLabels.read" :value="`${regionalSummary.readPct.toFixed(2)}%`" />
-      <MetricCard :label="reportLabels.pending" :value="`${regionalSummary.pendingPct.toFixed(2)}%`" :subtext="`Meta: até ${formatLimit(metaThreshold)}%`" :tone="getMetaTone(regionalSummary.pendingPct)" />
       <MetricCard :label="reportLabels.accuracy" :value="`${regionalSummary.thirdPct.toFixed(2)}%`" />
+      <MetricCard label="Auditorias" :value="auditCount" />
       <MetricCard label="Lojas canceladas" :value="cancellationCount" :tone="cancellationCount ? 'red' : 'default'" subtext="Somadas no período" />
     </div>
 
@@ -583,7 +542,7 @@ onMounted(async () => {
 
     <section ref="trendChartCard" class="ui-card p-5" aria-labelledby="trend-title">
       <div class="mb-1 flex flex-wrap items-start justify-between gap-3">
-        <h2 id="trend-title" class="ui-title !mt-0">{{ reportLabels.read }} ao longo do período</h2>
+        <h2 id="trend-title" class="ui-title !mt-0">{{ reportLabels.pending }} ao longo do período</h2>
         <button type="button" data-export-control class="ui-btn-soft" :disabled="!report.trend.dates.length" @click="exportTrendChart">
           <i class="fa-solid fa-download" aria-hidden="true"></i>
           Salvar imagem
@@ -595,9 +554,11 @@ onMounted(async () => {
         :dates="report.trend.dates"
         :regional="report.trend.regional"
         :stores="report.trend.stores.filter((series) => series.points.some(Boolean))"
-        :value-label="reportLabels.read"
+        :value-label="reportLabels.pending"
         :region-code="region.code"
         :show-types="selectedAuditType === 'Geral'"
+        :meta="metaThreshold"
+        :attention="attentionLimit"
       />
 
       <div v-else class="mt-3 rounded-md border border-dashed border-line-strong px-4 py-6 text-[15px] text-steel">
@@ -644,10 +605,10 @@ onMounted(async () => {
           <thead class="ui-table-head">
             <tr>
               <th class="px-4 py-3">Loja</th>
-              <th class="px-4 py-3">SKU</th>
-              <th class="px-4 py-3">{{ reportLabels.read }}</th>
               <th class="px-4 py-3">{{ reportLabels.pending }}</th>
               <th class="px-4 py-3">Evolução</th>
+              <th class="px-4 py-3">SKU</th>
+              <th class="px-4 py-3">{{ reportLabels.read }}</th>
               <th class="px-4 py-3">{{ reportLabels.accuracy }}</th>
               <th class="px-4 py-3">{{ reportLabels.moved }}</th>
               <th class="px-4 py-3">Cancelamentos</th>
@@ -659,8 +620,6 @@ onMounted(async () => {
                 <span class="store-name-cell" :title="row.name">{{ row.displayName }}</span>
               </td>
               <template v-if="row.hasData">
-                <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
-                <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3 font-semibold" :class="{ green: 'text-good', orange: 'text-warn', red: 'text-bad' }[getMetaTone(row.pendingPct)]">{{ row.pendingPct.toFixed(2) }}%</td>
                 <td class="px-4 py-2">
                   <svg v-if="sparklines[row.code]" :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`" :width="SPARK_W" :height="SPARK_H" class="block overflow-visible" role="img" :aria-label="sparklines[row.code].label">
@@ -670,6 +629,8 @@ onMounted(async () => {
                   </svg>
                   <span v-else class="text-[13px] text-steel">—</span>
                 </td>
+                <td class="px-4 py-3">{{ row.totalSku.toLocaleString('pt-BR') }}</td>
+                <td class="px-4 py-3">{{ row.readPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3">{{ row.thirdPct.toFixed(2) }}%</td>
                 <td class="px-4 py-3">{{ row.movedItems.toLocaleString('pt-BR') }}</td>
               </template>

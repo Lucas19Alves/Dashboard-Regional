@@ -1,19 +1,21 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-// Evolução no período: regional em destaque, lojas em cinza como contexto,
-// e até 3 lojas destacadas em cor pelo usuário.
+// Evolução da pendência (indicador da meta) no período.
+// Regional em destaque; cada loja tem cor fixa (a mesma em todo o sistema) e pode ser ligada ou desligada.
 const props = defineProps({
   dates: { type: Array, default: () => [] }, // [{ isoDate, label, type }]
-  regional: { type: Array, default: () => [] }, // [{ readPct } | null]
-  stores: { type: Array, default: () => [] }, // [{ code, name, points: [{ readPct } | null] }]
-  valueLabel: { type: String, default: 'Leitura' },
+  regional: { type: Array, default: () => [] }, // [{ pendingPct } | null]
+  stores: { type: Array, default: () => [] }, // [{ code, name, color, points: [{ pendingPct } | null] }]
+  valueLabel: { type: String, default: 'Pendência' },
   regionCode: { type: String, default: 'Regional' },
   showTypes: { type: Boolean, default: false },
+  meta: { type: Number, default: 3 },
+  attention: { type: Number, default: 7 },
 })
 
-const HIGHLIGHT_SLOTS = 3
 const TYPE_INITIAL = { Etiqueta: 'E', Presença: 'P', Ruptura: 'R' }
+const valueOf = (point) => Number(point?.pendingPct ?? 0)
 
 // ---------- Tamanho real (SVG sem esticar, texto sempre no mesmo tamanho) ----------
 const wrapper = ref(null)
@@ -29,34 +31,52 @@ onMounted(() => {
 onBeforeUnmount(() => observer?.disconnect())
 
 const compact = computed(() => width.value < 640)
-const height = computed(() => (compact.value ? 260 : 340))
+const height = computed(() => (compact.value ? 280 : 360))
 const pad = computed(() => ({
   left: 44,
-  right: compact.value ? 58 : 92,
+  right: compact.value ? 52 : 92,
   top: 16,
   bottom: props.showTypes ? 46 : 32,
 }))
 const plotW = computed(() => Math.max(40, width.value - pad.value.left - pad.value.right))
 const plotH = computed(() => height.value - pad.value.top - pad.value.bottom)
 
-// ---------- Escala Y ajustada aos dados ----------
-const allValues = computed(() => [
-  ...props.regional.filter(Boolean).map((point) => point.readPct),
-  ...props.stores.flatMap((series) => series.points.filter(Boolean).map((point) => point.readPct)),
-])
+// ---------- Lojas ligadas (todas por padrão) ----------
+const selected = ref(new Set(props.stores.map((series) => series.code)))
+const known = new Set(props.stores.map((series) => series.code))
 
+// Loja que aparece depois (filtro mudou) entra ligada; as já conhecidas mantêm a escolha.
+watch(() => props.stores.map((series) => series.code), (codes) => {
+  const next = new Set(selected.value)
+  for (const code of codes) {
+    if (!known.has(code)) { known.add(code); next.add(code) }
+  }
+  selected.value = next
+})
+
+const isOn = (code) => selected.value.has(code)
+function toggleStore(code) {
+  const next = new Set(selected.value)
+  if (next.has(code)) next.delete(code)
+  else next.add(code)
+  selected.value = next
+}
+function selectAll() { selected.value = new Set(props.stores.map((series) => series.code)) }
+function selectNone() { selected.value = new Set() }
+
+const visibleStores = computed(() => props.stores.filter((series) => isOn(series.code)))
+const allOn = computed(() => visibleStores.value.length === props.stores.length)
+const hoverCode = ref(null)
+
+// ---------- Escala Y: de 0 até acima do maior valor e da meta ----------
 const domain = computed(() => {
-  const values = allValues.value
-  if (!values.length) return { min: 0, max: 100, step: 25 }
-  const lo = Math.min(...values)
-  const hi = Math.max(...values)
-  const span = Math.max(hi - lo, 4)
-  const step = span <= 8 ? 2 : span <= 20 ? 5 : span <= 50 ? 10 : 25
-  let min = Math.max(0, Math.floor((lo - span * 0.08) / step) * step)
-  let max = Math.min(100, Math.ceil((hi + span * 0.08) / step) * step)
-  if (max - min < step * 2) min = Math.max(0, max - step * 2)
-  if (max <= min) max = min + step
-  return { min, max, step }
+  const values = [
+    ...props.regional.filter(Boolean).map(valueOf),
+    ...visibleStores.value.flatMap((series) => series.points.filter(Boolean).map(valueOf)),
+  ]
+  const hi = Math.max(props.meta * 1.6, ...(values.length ? values : [0]))
+  const step = hi <= 6 ? 1 : hi <= 12 ? 2 : hi <= 30 ? 5 : 10
+  return { min: 0, max: Math.ceil((hi * 1.08) / step) * step, step }
 })
 
 const yTicks = computed(() => {
@@ -81,13 +101,14 @@ function pathOf(points) {
   let open = false
   points.forEach((point, index) => {
     if (!point) { open = false; return }
-    path += `${open ? 'L' : 'M'}${xAt(index).toFixed(1)} ${yAt(point.readPct).toFixed(1)} `
+    path += `${open ? 'L' : 'M'}${xAt(index).toFixed(1)} ${yAt(valueOf(point)).toFixed(1)} `
     open = true
   })
   return path.trim()
 }
 
 const pct = (value, digits = 2) => `${Number(value || 0).toFixed(digits).replace('.', ',')}%`
+const tick = (value) => `${String(Number(value.toFixed(1))).replace('.', ',')}%`
 const lastPoint = (points) => {
   for (let index = points.length - 1; index >= 0; index -= 1) if (points[index]) return { index, point: points[index] }
   return null
@@ -97,50 +118,26 @@ const firstPoint = (points) => {
   return index >= 0 ? { index, point: points[index] } : null
 }
 
-// ---------- Destaque de lojas (a cor segue a loja, não a ordem) ----------
-const slots = reactive({}) // code -> 1..3
-const previewCode = ref(null)
-const selectionFull = computed(() => Object.keys(slots).length >= HIGHLIGHT_SLOTS)
-
-function toggleStore(code) {
-  if (slots[code]) {
-    delete slots[code]
-    return
-  }
-  const used = new Set(Object.values(slots))
-  const free = [1, 2, 3].find((slot) => !used.has(slot))
-  if (free) slots[code] = free
-}
-
-function clearHighlights() {
-  Object.keys(slots).forEach((code) => delete slots[code])
-}
-
-const contextLines = computed(() => props.stores
-  .filter((series) => !slots[series.code] && series.code !== previewCode.value)
-  .map((series) => ({ code: series.code, d: pathOf(series.points) })))
-
-const highlighted = computed(() => props.stores
-  .filter((series) => slots[series.code] || series.code === previewCode.value)
-  .map((series) => ({
-    ...series,
-    color: slots[series.code] ? `var(--hl-${slots[series.code]})` : 'var(--steel)',
-    isPreview: !slots[series.code],
-    d: pathOf(series.points),
-  })))
+const storeLines = computed(() => visibleStores.value.map((series) => ({
+  ...series,
+  d: pathOf(series.points),
+  dim: hoverCode.value !== null && hoverCode.value !== series.code,
+})))
 
 const regionalPath = computed(() => pathOf(props.regional))
 const showDots = computed(() => props.dates.length <= 24)
+const showStoreDots = computed(() => showDots.value && visibleStores.value.length <= 6)
 
-// Rótulos no fim das linhas, afastados para não encostar.
+// Rótulos no fim das linhas: regional sempre; lojas só quando poucas (senão viram ruído).
 const endLabels = computed(() => {
   const items = []
   const regionalLast = lastPoint(props.regional)
-  if (regionalLast) items.push({ key: 'regional', text: props.regionCode, value: pct(regionalLast.point.readPct, 1), y: yAt(regionalLast.point.readPct), x: xAt(regionalLast.index), color: 'var(--ink)', strong: true })
-  for (const series of highlighted.value) {
-    if (series.isPreview) continue
-    const last = lastPoint(series.points)
-    if (last) items.push({ key: series.code, text: series.code, value: pct(last.point.readPct, 1), y: yAt(last.point.readPct), x: xAt(last.index), color: series.color, strong: false })
+  if (regionalLast) items.push({ key: 'regional', text: props.regionCode, value: pct(valueOf(regionalLast.point), 1), y: yAt(valueOf(regionalLast.point)), color: 'var(--ink)', strong: true })
+  if (visibleStores.value.length <= 5) {
+    for (const series of visibleStores.value) {
+      const last = lastPoint(series.points)
+      if (last) items.push({ key: series.code, text: series.code, value: pct(valueOf(last.point), 1), y: yAt(valueOf(last.point)), color: series.color, strong: false })
+    }
   }
   const gap = 15
   items.sort((a, b) => a.y - b.y)
@@ -161,18 +158,20 @@ function showDateLabel(index) {
   return index % labelEvery.value === 0
 }
 
-// ---------- Resumo do período ----------
+// ---------- Resumo do período (pendência: cair é bom) ----------
 const summary = computed(() => {
   const first = firstPoint(props.regional)
   const last = lastPoint(props.regional)
   if (!first || !last) return null
-  const delta = last.point.readPct - first.point.readPct
+  const delta = valueOf(last.point) - valueOf(first.point)
+  const current = valueOf(last.point)
   return {
-    from: pct(first.point.readPct),
-    to: pct(last.point.readPct),
+    from: pct(valueOf(first.point)),
+    to: pct(current),
     delta: `${delta > 0 ? '+' : delta < 0 ? '−' : ''}${Math.abs(delta).toFixed(2).replace('.', ',')} p.p.`,
-    tone: delta > 0.005 ? 'text-good' : delta < -0.005 ? 'text-bad' : 'text-steel',
+    tone: delta < -0.005 ? 'text-good' : delta > 0.005 ? 'text-bad' : 'text-steel',
     single: first.index === last.index,
+    onTarget: current <= props.meta,
   }
 })
 
@@ -207,53 +206,58 @@ function onKey(event) {
   }
 }
 
+const TOOLTIP_W = 220
+function tooltipStyle(x) {
+  if (x + 12 + TOOLTIP_W <= width.value) return { left: `${x + 12}px` }
+  if (x - 12 - TOOLTIP_W >= 0) return { left: `${x - 12 - TOOLTIP_W}px` }
+  return { left: `${Math.max(0, Math.min(width.value - TOOLTIP_W, x - TOOLTIP_W / 2))}px` }
+}
+
+function toneOf(value) {
+  if (value <= props.meta) return 'good'
+  if (value <= props.attention) return 'warn'
+  return 'bad'
+}
+
 const readout = computed(() => {
   const index = activeIndex.value
   if (index === null || !props.dates[index]) return null
   const date = props.dates[index]
-  const storeValues = props.stores
-    .map((series) => ({ code: series.code, value: series.points[index]?.readPct }))
-    .filter((item) => Number.isFinite(item.value))
-    .sort((a, b) => b.value - a.value)
-  const chosen = highlighted.value
-    .filter((series) => !series.isPreview && series.points[index])
-    .map((series) => ({ code: series.code, color: series.color, value: pct(series.points[index].readPct) }))
-  const x = xAt(index)
+  // Pior primeiro: maior pendência no topo.
+  const rows = visibleStores.value
+    .filter((series) => series.points[index])
+    .map((series) => ({ code: series.code, color: series.color, raw: valueOf(series.points[index]) }))
+    .sort((a, b) => b.raw - a.raw)
+    .map((row) => ({ ...row, value: pct(row.raw), tone: toneOf(row.raw) }))
+  const regionalValue = props.regional[index] ? valueOf(props.regional[index]) : null
   return {
-    x,
-    style: tooltipStyle(x),
+    x: xAt(index),
+    style: tooltipStyle(xAt(index)),
     title: `${date.label}${props.showTypes && date.type ? `, ${date.type}` : ''}`,
-    regional: props.regional[index] ? pct(props.regional[index].readPct) : '—',
-    chosen,
-    best: storeValues[0] ? { code: storeValues[0].code, value: pct(storeValues[0].value) } : null,
-    worst: storeValues.length > 1 ? { code: storeValues[storeValues.length - 1].code, value: pct(storeValues[storeValues.length - 1].value) } : null,
-    count: storeValues.length,
+    regional: regionalValue === null ? '—' : pct(regionalValue),
+    rows: compact.value ? rows.slice(0, 5) : rows,
+    hidden: compact.value ? Math.max(0, rows.length - 5) : 0,
+    total: rows.length,
+    outOfTarget: rows.filter((row) => row.raw > props.meta).length,
   }
 })
 
-// Leitura ao lado do cursor, sem sair do gráfico.
-const TOOLTIP_W = 210
-function tooltipStyle(x) {
-  if (x + 12 + TOOLTIP_W <= width.value) return { left: `${x + 12}px` }
-  if (x - 12 - TOOLTIP_W >= 0) return { left: `${x - 12 - TOOLTIP_W}px` }
-  return { left: `${Math.max(0, Math.min(width.value - TOOLTIP_W, x - TOOLTIP_W / 2))}px`, top: `${height.value - 8}px`, transform: 'translateY(-100%)' }
-}
-
 const ariaLabel = computed(() => {
   if (!summary.value) return `${props.valueLabel} sem dados no período`
-  return `${props.valueLabel} da regional ${props.regionCode} em ${props.dates.length} auditorias, de ${summary.value.from} para ${summary.value.to}. Use as setas para ler cada data.`
+  return `${props.valueLabel} da regional ${props.regionCode} em ${props.dates.length} auditorias, de ${summary.value.from} para ${summary.value.to}. Meta: até ${tick(props.meta)}. Use as setas para ler cada data.`
 })
 </script>
 
 <template>
   <div class="trend">
     <p v-if="summary" class="mb-3 text-[15px] text-steel">
-      <template v-if="summary.single">Regional em {{ summary.to }} na única auditoria do período.</template>
+      <template v-if="summary.single">Regional em <strong class="font-semibold text-ink">{{ summary.to }}</strong> na única auditoria do período.</template>
       <template v-else>
         Regional foi de <strong class="font-semibold text-ink">{{ summary.from }}</strong> para
         <strong class="font-semibold text-ink">{{ summary.to }}</strong>
-        <span class="ml-1 font-semibold" :class="summary.tone">({{ summary.delta }})</span>
+        <span class="ml-1 font-semibold" :class="summary.tone">({{ summary.delta }})</span>.
       </template>
+      {{ summary.onTarget ? 'Dentro da meta.' : 'Acima da meta.' }}
     </p>
 
     <div ref="wrapper" class="relative">
@@ -272,11 +276,14 @@ const ariaLabel = computed(() => {
         @keydown="onKey"
         @blur="activeIndex = null"
       >
+        <!-- Área acima da meta, bem leve -->
+        <rect :x="pad.left" :y="pad.top" :width="plotW" :height="Math.max(0, yAt(meta) - pad.top)" :style="{ fill: 'var(--bad)' }" fill-opacity="0.04" />
+
         <!-- Grade e eixo Y -->
         <g>
-          <template v-for="tick in yTicks" :key="`t-${tick}`">
-            <line :x1="pad.left" :x2="pad.left + plotW" :y1="yAt(tick)" :y2="yAt(tick)" :style="{ stroke: tick === domain.min ? 'var(--line-strong)' : 'var(--line)' }" stroke-width="1" />
-            <text :x="pad.left - 8" :y="yAt(tick) + 4" text-anchor="end" :style="{ fill: 'var(--steel)' }" font-size="12">{{ pct(tick, 0) }}</text>
+          <template v-for="value in yTicks" :key="`t-${value}`">
+            <line :x1="pad.left" :x2="pad.left + plotW" :y1="yAt(value)" :y2="yAt(value)" :style="{ stroke: value === 0 ? 'var(--line-strong)' : 'var(--line)' }" stroke-width="1" />
+            <text :x="pad.left - 8" :y="yAt(value) + 4" text-anchor="end" :style="{ fill: 'var(--steel)' }" font-size="12">{{ tick(value) }}</text>
           </template>
         </g>
 
@@ -291,29 +298,32 @@ const ariaLabel = computed(() => {
         <!-- Cursor -->
         <line v-if="readout" :x1="readout.x" :x2="readout.x" :y1="pad.top" :y2="pad.top + plotH" :style="{ stroke: 'var(--steel)' }" stroke-width="1" stroke-dasharray="3 4" />
 
-        <!-- Lojas como contexto -->
-        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <path v-for="line in contextLines" :key="`c-${line.code}`" :d="line.d" :style="{ stroke: 'var(--steel)' }" stroke-width="1.25" stroke-opacity="0.28" />
-        </g>
-
-        <!-- Lojas destacadas -->
-        <g v-for="series in highlighted" :key="`h-${series.code}`">
-          <path :d="series.d" fill="none" :style="{ stroke: series.color }" :stroke-width="series.isPreview ? 1.75 : 2" :stroke-dasharray="series.isPreview ? '4 3' : null" stroke-linecap="round" stroke-linejoin="round" />
-          <template v-if="showDots && !series.isPreview">
-            <circle v-for="(point, index) in series.points" v-show="point" :key="index" :cx="xAt(index)" :cy="point ? yAt(point.readPct) : 0" r="3" :style="{ fill: series.color, stroke: 'var(--paper)' }" stroke-width="2" />
+        <!-- Lojas -->
+        <g v-for="series in storeLines" :key="`s-${series.code}`" :opacity="series.dim ? 0.12 : 0.8">
+          <path :d="series.d" fill="none" :style="{ stroke: series.color }" :stroke-width="hoverCode === series.code ? 2.75 : 1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <template v-if="showStoreDots || hoverCode === series.code">
+            <circle v-for="(point, index) in series.points" v-show="point" :key="index" :cx="xAt(index)" :cy="point ? yAt(valueOf(point)) : 0" r="2.5" :style="{ fill: series.color, stroke: 'var(--paper)' }" stroke-width="1.5" />
           </template>
         </g>
 
-        <!-- Regional -->
-        <path :d="regionalPath" fill="none" :style="{ stroke: 'var(--ink)' }" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
+        <!-- Meta -->
+        <line :x1="pad.left" :x2="pad.left + plotW" :y1="yAt(meta)" :y2="yAt(meta)" :style="{ stroke: 'var(--ink)' }" stroke-width="1.5" stroke-dasharray="6 4" />
+        <g :transform="`translate(${pad.left + 6}, ${yAt(meta) - 22})`">
+          <rect width="70" height="18" rx="3" fill="#FFD60A" />
+          <text x="35" y="13" text-anchor="middle" fill="#1B2430" font-size="12" font-weight="700">Meta {{ tick(meta) }}</text>
+        </g>
+
+        <!-- Regional, com contorno do fundo para se destacar das lojas -->
+        <path :d="regionalPath" fill="none" :style="{ stroke: 'var(--paper)' }" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+        <path :d="regionalPath" fill="none" :style="{ stroke: 'var(--ink)' }" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
         <template v-if="showDots">
-          <circle v-for="(point, index) in regional" v-show="point" :key="`r-${index}`" :cx="xAt(index)" :cy="point ? yAt(point.readPct) : 0" :r="activeIndex === index ? 5 : 3.5" :style="{ fill: 'var(--ink)', stroke: 'var(--paper)' }" stroke-width="2" />
+          <circle v-for="(point, index) in regional" v-show="point" :key="`r-${index}`" :cx="xAt(index)" :cy="point ? yAt(valueOf(point)) : 0" :r="activeIndex === index ? 5 : 3.5" :style="{ fill: 'var(--ink)', stroke: 'var(--paper)' }" stroke-width="2" />
         </template>
 
         <!-- Rótulos no fim das linhas -->
         <g>
           <text v-for="label in endLabels" :key="`l-${label.key}`" :x="pad.left + plotW + 10" :y="label.y + 4" font-size="13" :font-weight="label.strong ? 700 : 600" :style="{ fill: 'var(--ink)' }">
-            <tspan :style="{ fill: label.color }">{{ label.text }}</tspan>
+            <tspan :style="{ fill: label.strong ? 'var(--ink)' : label.color }">{{ label.text }}</tspan>
             <tspan v-if="!compact" dx="5" :style="{ fill: 'var(--steel)' }" font-weight="500">{{ label.value }}</tspan>
           </text>
         </g>
@@ -322,7 +332,7 @@ const ariaLabel = computed(() => {
       <!-- Leitura da data sob o cursor -->
       <div
         v-if="readout"
-        class="pointer-events-none absolute top-2 z-10 w-[210px] max-w-full rounded-md bg-ink px-3 py-2.5 text-paper shadow-lg"
+        class="pointer-events-none absolute top-2 z-10 w-[220px] max-w-full rounded-md bg-ink px-3 py-2.5 text-paper shadow-lg"
         :style="readout.style"
       >
         <p class="text-[13px] font-semibold opacity-80">{{ readout.title }}</p>
@@ -330,50 +340,54 @@ const ariaLabel = computed(() => {
           <span class="text-[13px] opacity-80">Regional</span>
           <span class="font-display text-[22px] font-semibold leading-none">{{ readout.regional }}</span>
         </p>
-        <p v-for="item in readout.chosen" :key="item.code" class="mt-1 flex items-center justify-between gap-3 text-[13px]">
-          <span class="flex items-center gap-1.5"><i class="inline-block h-[3px] w-3 rounded-full" :style="{ background: item.color }"></i>Loja {{ item.code }}</span>
-          <span class="font-semibold">{{ item.value }}</span>
-        </p>
-        <div v-if="readout.best" class="mt-2 border-t border-paper/20 pt-1.5 text-[12px] opacity-80">
-          <p class="flex justify-between gap-3"><span>Maior: {{ readout.best.code }}</span><span>{{ readout.best.value }}</span></p>
-          <p v-if="readout.worst" class="flex justify-between gap-3"><span>Menor: {{ readout.worst.code }}</span><span>{{ readout.worst.value }}</span></p>
-        </div>
+        <template v-if="readout.rows.length">
+          <p class="mt-1 text-[12px] opacity-80">
+            {{ readout.outOfTarget }} de {{ readout.total }} {{ readout.total === 1 ? 'loja' : 'lojas' }} acima da meta
+          </p>
+          <div class="mt-1.5 space-y-0.5 border-t border-paper/20 pt-1.5">
+            <p v-for="row in readout.rows" :key="row.code" class="flex items-center justify-between gap-3 text-[13px] leading-[18px]">
+              <span class="flex items-center gap-1.5"><i class="inline-block h-[3px] w-3 rounded-full" :style="{ background: row.color }"></i>{{ row.code }}</span>
+              <span class="font-semibold" :class="{ 'opacity-70': row.tone === 'good' }">{{ row.value }}</span>
+            </p>
+            <p v-if="readout.hidden" class="text-[12px] opacity-70">e mais {{ readout.hidden }} {{ readout.hidden === 1 ? 'loja' : 'lojas' }}</p>
+          </div>
+        </template>
       </div>
     </div>
 
-    <!-- Legenda que também escolhe as lojas destacadas -->
+    <!-- Legenda que também liga e desliga as lojas -->
     <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <span class="inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink">
         <i class="inline-block h-[3px] w-4 rounded-full bg-ink" aria-hidden="true"></i>{{ regionCode }}
       </span>
       <span class="inline-flex items-center gap-1.5 text-[14px] text-steel">
-        <i class="inline-block h-[2px] w-4 rounded-full bg-steel/40" aria-hidden="true"></i>Lojas
+        <i class="inline-block w-4 border-t-[1.5px] border-dashed border-ink" aria-hidden="true"></i>Meta
       </span>
       <span class="mx-1 hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true"></span>
-      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Destacar lojas no gráfico">
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Lojas no gráfico">
         <button
           v-for="series in stores"
           :key="`b-${series.code}`"
           type="button"
           class="inline-flex min-h-[30px] items-center gap-1.5 rounded-[4px] border px-2 font-display text-[15px] font-semibold transition-colors"
-          :class="slots[series.code] ? 'border-ink text-ink' : 'border-line-strong text-steel hover:border-ink hover:text-ink'"
-          :aria-pressed="Boolean(slots[series.code])"
-          :disabled="!slots[series.code] && selectionFull"
-          :title="!slots[series.code] && selectionFull ? 'Até 3 lojas destacadas. Desmarque uma para trocar.' : series.name || `Loja ${series.code}`"
+          :class="isOn(series.code) ? 'border-line-strong text-ink hover:border-ink' : 'border-dashed border-line-strong text-steel hover:text-ink'"
+          :aria-pressed="isOn(series.code)"
+          :title="series.name || `Loja ${series.code}`"
           @click="toggleStore(series.code)"
-          @pointerenter="previewCode = slots[series.code] || selectionFull ? null : series.code"
-          @pointerleave="previewCode = null"
-          @focus="previewCode = slots[series.code] || selectionFull ? null : series.code"
-          @blur="previewCode = null"
+          @pointerenter="hoverCode = isOn(series.code) ? series.code : null"
+          @pointerleave="hoverCode = null"
+          @focus="hoverCode = isOn(series.code) ? series.code : null"
+          @blur="hoverCode = null"
         >
-          <i v-if="slots[series.code]" class="inline-block h-[3px] w-3 rounded-full" :style="{ background: `var(--hl-${slots[series.code]})` }" aria-hidden="true"></i>
+          <i class="inline-block h-[3px] w-3 rounded-full" :style="{ background: isOn(series.code) ? series.color : 'var(--line-strong)' }" aria-hidden="true"></i>
           {{ series.code }}
         </button>
       </div>
-      <button v-if="Object.keys(slots).length" type="button" class="text-[14px] font-semibold text-steel underline-offset-4 hover:text-ink hover:underline" @click="clearHighlights">
-        Limpar destaque
-      </button>
+      <span class="flex gap-3 text-[14px] font-semibold" data-export-control>
+        <button v-if="!allOn" type="button" class="text-ink underline-offset-4 hover:underline" @click="selectAll">Mostrar todas</button>
+        <button v-if="visibleStores.length" type="button" class="text-steel underline-offset-4 hover:text-ink hover:underline" @click="selectNone">Só a regional</button>
+      </span>
     </div>
-    <p class="mt-1.5 text-[13px] text-steel" data-export-control>Toque numa loja para destacar a linha dela (até 3). Passe o cursor ou use as setas para ler cada data.</p>
+    <p class="mt-1.5 text-[13px] text-steel" data-export-control>Toque numa loja para ligar ou desligar a linha dela. Passe o cursor numa loja para destacá-la, ou no gráfico para ler cada data.</p>
   </div>
 </template>
