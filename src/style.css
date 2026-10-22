@@ -33,6 +33,10 @@
   --tag: #FFD60A;
   --tag-ink: #1B2430;
   --bar: #1B2430;
+  /* Lojas destacadas nos gráficos de linha (validadas para daltonismo e contraste) */
+  --hl-1: #2a78d6;
+  --hl-2: #d55181;
+  --hl-3: #6250d6;
 
   color-scheme: light;
   font-family: 'Barlow', system-ui, sans-serif;
@@ -60,6 +64,9 @@
   --c-warn: 232 165 66;
   --c-bad: 242 98 114;
   --bar: #0B0E12;
+  --hl-1: #3987e5;
+  --hl-2: #d55181;
+  --hl-3: #9085e9;
 
   color-scheme: dark;
 }
