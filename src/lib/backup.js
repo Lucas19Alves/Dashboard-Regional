@@ -34,10 +34,15 @@ function entry(regionId) {
   return backupState[regionId]
 }
 
+// Avisados a cada alteração (backup automático em pasta).
+const changeListeners = []
+export const onChange = (fn) => changeListeners.push(fn)
+
 // Pequena alteração = 1 (importar ou atualizar um dia). Grande = 3 (lote, exclusão).
 export function markChange(regionId, weight = 1) {
   if (!regionId) return
   entry(regionId).pending += weight
+  changeListeners.forEach((fn) => fn(regionId))
 }
 
 export function markBackedUp(regionId) {
@@ -67,17 +72,24 @@ export function lastBackupLabel(regionId) {
   return `Último backup: há ${days} dias.`
 }
 
-export async function downloadBackup(region) {
-  const payload = await exportSessionsAsJson(region.id)
+// Arquivo de backup da regional. Com data no nome para download; sem data na pasta automática.
+export async function buildBackupFile(regionId, dated = false) {
+  const payload = await exportSessionsAsJson(regionId)
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const now = new Date()
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const name = dated ? `regional-${regionId}-backup-${stamp}.json` : `regional-${regionId}-backup.json`
+  return { blob, name, count: payload.sessions.length }
+}
+
+export async function downloadBackup(region) {
+  const { blob, name, count } = await buildBackupFile(region.id, true)
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  const now = new Date()
-  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  link.download = `regional-${region.id}-backup-${stamp}.json`
+  link.download = name
   link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   markBackedUp(region.id)
-  return payload.sessions.length
+  return count
 }

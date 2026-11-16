@@ -5,6 +5,9 @@ import { importSessionsFromJson, listSessions } from '../lib/database'
 import { downloadBackup, lastBackupLabel } from '../lib/backup'
 import { useRoute } from 'vue-router'
 import { getRegion } from '../lib/regions'
+import { allowFolder, chooseFolder, disableFolder, folderState, saveAllToFolder } from '../lib/backupFolder'
+
+const when = (d) => (d ? d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'ainda não')
 
 const route = useRoute()
 const region = computed(() => getRegion(route.params.region))
@@ -118,6 +121,61 @@ onMounted(async () => {
         </div>
       </section>
     </div>
+
+
+    <section class="ui-card p-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="ui-title !mt-0">Backup automático em pasta</h2>
+        <span
+          v-if="folderState.configured"
+          class="rounded-full border px-2.5 py-0.5 text-[13px] font-semibold"
+          :class="folderState.permission === 'granted' ? 'border-good/30 bg-good/5 text-good' : 'border-warn/30 bg-warn/5 text-warn'"
+        >
+          {{ folderState.permission === 'granted' ? 'Ativo' : 'Aguardando permissão' }}
+        </span>
+      </div>
+
+      <p v-if="!folderState.supported" class="mt-2 text-[15px] leading-6 text-steel">
+        Disponível no Chrome ou Edge no computador. Neste navegador, use o botão Exportar.
+      </p>
+
+      <template v-else-if="!folderState.configured">
+        <p class="mt-2 text-[15px] leading-6 text-steel">
+          Escolha uma pasta no computador (ex.: OneDrive ou rede da empresa). O sistema grava o backup sozinho a cada alteração e uma vez por dia, sempre no mesmo arquivo por regional (regional-{{ region.id }}-backup.json), substituindo o anterior.
+        </p>
+        <div class="mt-5">
+          <button type="button" class="ui-btn-primary" @click="chooseFolder">
+            <i class="fa-solid fa-folder-plus text-sm" aria-hidden="true"></i>
+            Escolher pasta
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <p class="mt-2 text-[15px] leading-6 text-steel">
+          Pasta: <strong class="text-ink">{{ folderState.name }}</strong> · último backup automático: {{ when(folderState.lastSavedAt) }}
+        </p>
+        <p v-if="folderState.permission !== 'granted'" class="mt-1 text-[15px] leading-6 text-warn">
+          O navegador pede para confirmar o acesso à pasta sempre que é reaberto.
+        </p>
+        <p v-if="folderState.error" class="mt-1 text-[15px] leading-6 text-bad">{{ folderState.error }}</p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          <button v-if="folderState.permission !== 'granted'" type="button" class="ui-btn-primary" @click="allowFolder">
+            <i class="fa-solid fa-unlock text-sm" aria-hidden="true"></i>
+            Permitir acesso
+          </button>
+          <button v-else type="button" class="ui-btn-primary" :disabled="folderState.saving" @click="saveAllToFolder">
+            <i :class="folderState.saving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-floppy-disk'" class="text-sm" aria-hidden="true"></i>
+            Salvar agora
+          </button>
+          <button type="button" class="ui-btn-secondary" @click="chooseFolder">
+            <i class="fa-solid fa-folder-tree text-sm" aria-hidden="true"></i>
+            Trocar pasta
+          </button>
+          <button type="button" class="ui-btn-secondary" @click="disableFolder">Desativar</button>
+        </div>
+      </template>
+    </section>
 
     <p
       v-if="statusText"

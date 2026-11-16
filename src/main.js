@@ -11,12 +11,14 @@ import '@fortawesome/fontawesome-free/css/all.min.css'
 import './style.css'
 import App from './App.vue'
 import router from './router'
+import { startAutoBackup } from './lib/backupFolder'
 
 inject()
 
 const app = createApp(App)
 app.use(router)
 app.mount('#app')
+startAutoBackup()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'))

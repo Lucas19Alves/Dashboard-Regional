@@ -6,6 +6,7 @@ import { getRegion } from './lib/regions'
 import { applyTheme } from './lib/settings'
 import { dataVersion, downloadBackup, lastBackupLabel, shouldRemind, snoozeReminder } from './lib/backup'
 import { importSessionsFromJson, listSessions } from './lib/database'
+import { allowFolder, autoBackupActive, folderState } from './lib/backupFolder'
 import { toasts, dismissToast, confirmState, settleConfirm, notify } from './composables/feedback'
 import { useModal } from './composables/useModal'
 
@@ -86,7 +87,9 @@ async function restoreFromFile(event) {
   }
 }
 
-const showBackupReminder = computed(() => isRegionalArea.value && shouldRemind(activeRegion.value.id))
+const showBackupReminder = computed(() => isRegionalArea.value && !autoBackupActive() && shouldRemind(activeRegion.value.id))
+// Pasta escolhida, mas o navegador foi reaberto: precisa de um clique para liberar o automático.
+const showFolderPermission = computed(() => isRegionalArea.value && folderState.configured && folderState.permission !== 'granted')
 
 async function exportFromReminder() {
   const count = await downloadBackup(activeRegion.value)
@@ -158,7 +161,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeinstallprompt', captureI
       </div>
     </header>
 
-    <div v-if="showBackupReminder" class="backup-reminder" role="status">
+    <div v-if="showFolderPermission" class="backup-reminder" role="status">
+      <div class="backup-reminder-inner">
+        <i class="fa-solid fa-folder-open text-[18px]" aria-hidden="true"></i>
+        <p>
+          <strong>Backup automático pausado.</strong>
+          Permita o acesso à pasta “{{ folderState.name }}” para o sistema voltar a salvar sozinho.
+        </p>
+        <div class="backup-reminder-actions">
+          <button type="button" class="ui-btn-primary" @click="allowFolder">Permitir acesso</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="showBackupReminder" class="backup-reminder" role="status">
       <div class="backup-reminder-inner">
         <i class="fa-solid fa-box-archive text-[18px]" aria-hidden="true"></i>
         <p>
